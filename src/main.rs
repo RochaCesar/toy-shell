@@ -29,7 +29,16 @@ fn main() {
                 println!("{command}: not found")
             }
         } else {
-            println!("{}: command not found", trimmed);
+            let mut parts = input.trim().split_whitespace();
+            let command = parts.next().unwrap();
+            let args = parts;
+
+            let mut child = std::process::Command::new(command)
+                .args(args)
+                .spawn()
+                .expect("{command} not found");
+
+            let _ = child.wait();
         }
     }
 }

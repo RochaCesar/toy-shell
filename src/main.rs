@@ -22,7 +22,7 @@ fn main() {
             if let Some(found) =
                 paths.find(|path| std::fs::metadata(format!("{path}/{command}")).is_ok())
             {
-                println!("{command} is in {found}/{command}")
+                println!("{command} is {found}/{command}")
             } else {
                 println!("{command}: not found")
             }

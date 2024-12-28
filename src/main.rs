@@ -33,12 +33,11 @@ fn main() {
             let command = parts.next().unwrap();
             let args = parts;
 
-            let mut child = std::process::Command::new(command)
-                .args(args)
-                .spawn()
-                .expect("{command} not found");
-
-            let _ = child.wait();
+            if let Ok(mut child) = std::process::Command::new(command).args(args).spawn() {
+                let _ = child.wait();
+            } else {
+                println!("invalid_grape_command: command not found");
+            }
         }
     }
 }

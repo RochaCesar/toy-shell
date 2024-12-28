@@ -36,7 +36,7 @@ fn main() {
             if let Ok(mut child) = std::process::Command::new(command).args(args).spawn() {
                 let _ = child.wait();
             } else {
-                println!("invalid_grape_command: command not found");
+                println!("{command}: command not found");
             }
         }
     }

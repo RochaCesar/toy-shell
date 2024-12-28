@@ -11,7 +11,10 @@ fn main() {
         stdin.read_line(&mut input).unwrap();
         match input.as_str().trim() {
             "exit 0" => break,
-            trimmed => println!("{}: command not found", trimmed),
+            trimmed => match input.strip_prefix("echo ") {
+                Some(rest) => println!("{rest}"),
+                _ => println!("{}: command not found", trimmed),
+            },
         }
     }
 }

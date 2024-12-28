@@ -19,7 +19,9 @@ fn main() {
             process::exit(code.parse::<i32>().expect("Not a number"));
         } else if let Some(command) = trimmed.strip_prefix("type ") {
             let mut paths = path_env.split(":");
-            if let Some(found) =
+            if command == "echo" || command == "exit" {
+                println!("{command} is a shell builtin")
+            } else if let Some(found) =
                 paths.find(|path| std::fs::metadata(format!("{path}/{command}")).is_ok())
             {
                 println!("{command} is {found}/{command}")

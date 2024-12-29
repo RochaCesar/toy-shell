@@ -4,6 +4,8 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process;
 
+use std::io::prelude::*;
+
 fn main() {
     let path_env = std::env::var("PATH").unwrap();
     let home_env = std::env::var("HOME").unwrap();
@@ -15,16 +17,64 @@ fn main() {
         stdin.read_line(&mut input).unwrap();
         let trimmed = input.as_str().trim();
 
-        if let Some(rest) = trimmed.strip_prefix("echo ") {
-            println!("{rest}");
-        } else if let Some(path) = trimmed.strip_prefix("cd ") {
-            if path.is_empty() || path == "~" {
+        if let Some(rest) = trimmed.strip_prefix("echo") {
+            println!(
+                "{}",
+                rest.chars()
+                    .skip_while(|x| *x == ' ')
+                    .filter(|x| *x != '\'')
+                    .collect::<String>()
+                    .trim()
+            )
+        } else if let Some(files) = trimmed.strip_prefix("cat") {
+            let mut result = Vec::new();
+            let mut current = String::new();
+            let mut in_quotes = false;
+
+            let mut iter = files.chars().skip_while(|x| *x == ' ');
+            while let Some(current_char) = iter.next() {
+                match current_char {
+                    '\'' => in_quotes = !in_quotes,
+                    ' ' if !in_quotes => {
+                        if !current.is_empty() {
+                            result.push(current.clone());
+                            current.clear();
+                        }
+                    }
+                    _ => current.push(current_char),
+                }
+            }
+
+            if !current.is_empty() {
+                result.push(current);
+            }
+
+            use std::fs::File;
+            use std::path::Path;
+
+            for file_name in result {
+                let path = Path::new(&file_name);
+                let display = path.display();
+
+                let mut file = match File::open(&path) {
+                    Err(why) => panic!("couldn't open {}: {}", display, why),
+                    Ok(file) => file,
+                };
+                // Read the file contents into a string, returns `io::Result<usize>`
+                let mut s = String::new();
+                match file.read_to_string(&mut s) {
+                    Err(why) => panic!("couldn't read {}: {}", display, why),
+                    Ok(_) => print!("{} contains:\n{}", display, s),
+                }
+            }
+        } else if let Some(path) = trimmed.strip_prefix("cd") {
+            if path == "" || path == " " || path == " ~" {
                 // Go home on empty path
                 let target = Path::new(&home_env);
                 if let Err(_) = std::env::set_current_dir(&target) {
                     println!("cd: {}: No such file or directory", target.display());
                 }
-            } else if path.chars().nth(0).unwrap() == '/' {
+            } else if path.chars().nth(1).unwrap() == '/' {
                 // Handle absolute paths
                 let target = Path::new(path);
 
@@ -39,7 +89,7 @@ fn main() {
                 let target_directory = current_directory
                     .chars()
                     .chain(std::iter::once('/'))
-                    .chain(path.chars())
+                    .chain(path.chars().skip(1))
                     .collect::<String>();
                 let mut destination = vec![];
                 for directory in target_directory.split("/") {
@@ -96,22 +146,5 @@ fn main() {
                 println!("{command}: command not found");
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_name() {
-        let testing: &str = "exit 100";
-
-        match testing.as_bytes() {
-            [b'e', b'x', b'i', b't', b' ', rest @ ..] => todo!(),
-            _ => {}
-        }
-
-        assert!(false);
     }
 }

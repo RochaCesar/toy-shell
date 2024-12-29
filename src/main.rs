@@ -4,7 +4,6 @@ use std::process;
 
 fn main() {
     let path_env = std::env::var("PATH").unwrap();
-    // Uncomment this block to pass the first stage
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -15,6 +14,8 @@ fn main() {
 
         if let Some(rest) = trimmed.strip_prefix("echo ") {
             println!("{rest}");
+        } else if let Some(_) = trimmed.strip_prefix("pwd") {
+            println!("{:#?}", std::env::current_dir().expect("Invalid Directory"));
         } else if let Some(code) = trimmed.strip_prefix("exit ") {
             process::exit(code.parse::<i32>().expect("Not a number"));
         } else if let Some(command) = trimmed.strip_prefix("type ") {
@@ -39,5 +40,22 @@ fn main() {
                 println!("{command}: command not found");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_name() {
+        let testing: &str = "exit 100";
+
+        match testing.as_bytes() {
+            [b'e', b'x', b'i', b't', b' ', rest @ ..] => todo!(),
+            _ => {}
+        }
+
+        assert!(false);
     }
 }

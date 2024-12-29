@@ -16,8 +16,7 @@ fn main() {
 
         if let Some(rest) = trimmed.strip_prefix("echo ") {
             println!("{rest}");
-        }
-        if let Some(path) = trimmed.strip_prefix("cd ") {
+        } else if let Some(path) = trimmed.strip_prefix("cd ") {
             let target = Path::new(path);
             if let Err(_) = std::env::set_current_dir(&target) {
                 println!("cd: {}: No such file or directory", target.display());

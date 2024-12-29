@@ -19,8 +19,8 @@ fn main() {
         }
         if let Some(path) = trimmed.strip_prefix("cd ") {
             let target = Path::new(path);
-            if let Err(e) = std::env::set_current_dir(&target) {
-                eprintln!("{} SENTINEL", e);
+            if let Err(_) = std::env::set_current_dir(&target) {
+                println!("cd: {}: No such file or directory", target.display());
             }
         } else if let Some(_) = trimmed.strip_prefix("pwd") {
             println!(

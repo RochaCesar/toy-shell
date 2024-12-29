@@ -14,17 +14,13 @@ fn main() {
 
         if let Some(rest) = trimmed.strip_prefix("echo ") {
             println!("{rest}");
-        } else if let Some(rest) = trimmed.strip_prefix("pwd") {
-            if rest.is_empty() {
-                println!(
-                    "{}",
-                    std::env::current_dir()
-                        .expect("Invalid Directory")
-                        .display()
-                );
-            } else {
-                println!("")
-            }
+        } else if let Some(_) = trimmed.strip_prefix("pwd") {
+            println!(
+                "{}",
+                std::env::current_dir()
+                    .expect("Invalid Directory")
+                    .display()
+            );
         } else if let Some(code) = trimmed.strip_prefix("exit ") {
             process::exit(code.parse::<i32>().expect("Not a number"));
         } else if let Some(command) = trimmed.strip_prefix("type ") {

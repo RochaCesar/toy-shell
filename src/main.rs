@@ -76,7 +76,8 @@ fn main() {
                 }
             } else if path.chars().nth(1).unwrap() == '/' {
                 // Handle absolute paths
-                let target = Path::new(path);
+                let absolute_path = path.chars().skip(1).collect::<String>();
+                let target = Path::new(&absolute_path);
 
                 if let Err(_) = std::env::set_current_dir(&target) {
                     println!("cd: {}: No such file or directory", target.display());

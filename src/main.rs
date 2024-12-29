@@ -6,6 +6,7 @@ use std::process;
 
 fn main() {
     let path_env = std::env::var("PATH").unwrap();
+    let home_env = std::env::var("HOME").unwrap();
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -16,11 +17,46 @@ fn main() {
 
         if let Some(rest) = trimmed.strip_prefix("echo ") {
             println!("{rest}");
-        } else if let Some(path) = trimmed.strip_prefix("cd ") {
-            let target = Path::new(path);
-            if let Err(_) = std::env::set_current_dir(&target) {
-                println!("cd: {}: No such file or directory", target.display());
-            }
+        } else if let Some(mut path) = trimmed.strip_prefix("cd ") {
+            if path.is_empty() {
+                // Go home on empty path
+                todo!()
+            } else if path.chars().nth(0).unwrap() == '/' {
+                // Handle absolute paths
+                let target = Path::new(path);
+
+                if let Err(_) = std::env::set_current_dir(&target) {
+                    println!("cd: {}: No such file or directory", target.display());
+                }
+            } else {
+                let get_current_directory = std::env::current_dir().expect("Invalid Directory");
+                let current_directory = get_current_directory
+                    .to_str()
+                    .expect("Error converting to string");
+                let target_directory = current_directory
+                    .chars()
+                    .chain(std::iter::once('/'))
+                    .chain(path.chars())
+                    .collect::<String>();
+                let mut destination = vec![];
+                for directory in target_directory.split("/") {
+                    match directory {
+                        "." => {}
+                        ".." => {
+                            destination.pop().unwrap();
+                        }
+                        _ => {
+                            destination.push(directory);
+                        }
+                    }
+                }
+                let final_destination = destination.join("/");
+                let target = Path::new(&final_destination);
+
+                if let Err(_) = std::env::set_current_dir(&target) {
+                    println!("cd: {}: No such file or directory", target.display());
+                }
+            };
         } else if let Some(_) = trimmed.strip_prefix("pwd") {
             println!(
                 "{}",

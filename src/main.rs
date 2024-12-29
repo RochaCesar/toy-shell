@@ -1,5 +1,7 @@
+use std::env::*;
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::path::Path;
 use std::process;
 
 fn main() {
@@ -14,6 +16,12 @@ fn main() {
 
         if let Some(rest) = trimmed.strip_prefix("echo ") {
             println!("{rest}");
+        }
+        if let Some(path) = trimmed.strip_prefix("cd ") {
+            let target = Path::new(path);
+            if let Err(e) = std::env::set_current_dir(&target) {
+                eprintln!("{} SENTINEL", e);
+            }
         } else if let Some(_) = trimmed.strip_prefix("pwd") {
             println!(
                 "{}",
@@ -25,7 +33,12 @@ fn main() {
             process::exit(code.parse::<i32>().expect("Not a number"));
         } else if let Some(command) = trimmed.strip_prefix("type ") {
             let mut paths = path_env.split(":");
-            if command == "echo" || command == "exit" || command == "type" || command == "pwd" {
+            if command == "cd"
+                || command == "echo"
+                || command == "exit"
+                || command == "type"
+                || command == "pwd"
+            {
                 println!("{command} is a shell builtin")
             } else if let Some(found) =
                 paths.find(|path| std::fs::metadata(format!("{path}/{command}")).is_ok())

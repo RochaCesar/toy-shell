@@ -6,6 +6,31 @@ use std::process;
 
 use std::io::prelude::*;
 
+pub fn tokenize(s: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+
+    let mut iter = s.chars().skip_while(|x| *x == ' ');
+    while let Some(current_char) = iter.next() {
+        match current_char {
+            '\'' => in_quotes = !in_quotes,
+            ' ' if !in_quotes => {
+                if !current.is_empty() {
+                    result.push(current.clone());
+                    current.clear();
+                }
+            }
+            _ => current.push(current_char),
+        }
+    }
+
+    if !current.is_empty() {
+        result.push(current);
+    }
+    result
+}
+
 fn main() {
     let path_env = std::env::var("PATH").unwrap();
     let home_env = std::env::var("HOME").unwrap();
@@ -18,39 +43,14 @@ fn main() {
         let trimmed = input.as_str().trim();
 
         if let Some(rest) = trimmed.strip_prefix("echo") {
-            println!(
-                "{}",
-                rest.chars()
-                    .skip_while(|x| *x == ' ')
-                    .filter(|x| *x != '\'')
-                    .collect::<String>()
-                    .trim()
-            )
+            let result = tokenize(rest);
+
+            println!("{}", result.join(" "));
         } else if let Some(files) = trimmed.strip_prefix("cat") {
-            let mut result = Vec::new();
-            let mut current = String::new();
-            let mut in_quotes = false;
-
-            let mut iter = files.chars().skip_while(|x| *x == ' ');
-            while let Some(current_char) = iter.next() {
-                match current_char {
-                    '\'' => in_quotes = !in_quotes,
-                    ' ' if !in_quotes => {
-                        if !current.is_empty() {
-                            result.push(current.clone());
-                            current.clear();
-                        }
-                    }
-                    _ => current.push(current_char),
-                }
-            }
-
-            if !current.is_empty() {
-                result.push(current);
-            }
-
             use std::fs::File;
             use std::path::Path;
+
+            let result = tokenize(&files);
 
             for file_name in result {
                 let path = Path::new(&file_name);

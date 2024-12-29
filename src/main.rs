@@ -17,10 +17,13 @@ fn main() {
 
         if let Some(rest) = trimmed.strip_prefix("echo ") {
             println!("{rest}");
-        } else if let Some(mut path) = trimmed.strip_prefix("cd ") {
-            if path.is_empty() {
+        } else if let Some(path) = trimmed.strip_prefix("cd ") {
+            if path.is_empty() || path == "~" {
                 // Go home on empty path
-                todo!()
+                let target = Path::new(&home_env);
+                if let Err(_) = std::env::set_current_dir(&target) {
+                    println!("cd: {}: No such file or directory", target.display());
+                }
             } else if path.chars().nth(0).unwrap() == '/' {
                 // Handle absolute paths
                 let target = Path::new(path);

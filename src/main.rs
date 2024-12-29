@@ -64,7 +64,7 @@ fn main() {
                 let mut s = String::new();
                 match file.read_to_string(&mut s) {
                     Err(why) => panic!("couldn't read {}: {}", display, why),
-                    Ok(_) => print!("{} contains:\n{}", display, s),
+                    Ok(_) => print!("{}", s),
                 }
             }
         } else if let Some(path) = trimmed.strip_prefix("cd") {

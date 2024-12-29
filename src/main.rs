@@ -6,28 +6,35 @@ use std::process;
 
 use std::io::prelude::*;
 
-pub fn tokenize(s: &str) -> Vec<String> {
+fn tokenize(input: &str) -> Vec<String> {
     let mut result = Vec::new();
     let mut current = String::new();
-    let mut in_quotes = false;
+    let mut quote_char = None;
+    let mut chars = input.chars().peekable();
 
-    let mut iter = s.chars().skip_while(|x| *x == ' ');
-    while let Some(current_char) = iter.next() {
-        match current_char {
-            '\'' => in_quotes = !in_quotes,
-            ' ' if !in_quotes => {
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' | '"' => {
+                match quote_char {
+                    None => quote_char = Some(c),
+                    Some(q) if q == c => quote_char = None,
+                    Some(_) => current.push(c), // Different quote type, treat as normal char
+                }
+            }
+            ' ' if quote_char.is_none() => {
                 if !current.is_empty() {
                     result.push(current.clone());
                     current.clear();
                 }
             }
-            _ => current.push(current_char),
+            _ => current.push(c),
         }
     }
 
     if !current.is_empty() {
         result.push(current);
     }
+
     result
 }
 
@@ -147,5 +154,25 @@ fn main() {
                 println!("{command}: command not found");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quoted_strings() {
+        // Test with double quotes
+        let s1 = "\"quz  hello\"  \"bar\"";
+        assert_eq!(tokenize(s1), vec!["quz  hello", "bar"]);
+
+        // Test with single quotes
+        let s2 = "'quz  hello'  'bar'";
+        assert_eq!(tokenize(s2), vec!["quz  hello", "bar"]);
+
+        // Test with mixed quotes
+        let s3 = "'hello world'  \"foo bar\"  'baz'";
+        assert_eq!(tokenize(s3), vec!["hello world", "foo bar", "baz"]);
     }
 }

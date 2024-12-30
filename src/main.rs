@@ -160,14 +160,15 @@ fn main() {
                 println!("{command}: not found")
             }
         } else {
-            let mut parts = input.trim().split_whitespace();
-            let command = parts.next().unwrap();
-            let args = parts;
+            let parts = tokenize(input.trim());
+            // let mut parts = input.trim().split_whitespace();
+            let command = parts.first().unwrap().clone();
+            let args = parts.iter().skip(1).collect::<Vec<&String>>();
 
-            if let Ok(mut child) = std::process::Command::new(command).args(args).spawn() {
+            if let Ok(mut child) = std::process::Command::new(&command).args(args).spawn() {
                 let _ = child.wait();
             } else {
-                println!("{command}: command not found");
+                println!("{}: command not found", &command);
             }
         }
     }

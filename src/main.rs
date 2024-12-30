@@ -14,6 +14,11 @@ fn tokenize(input: &str) -> Vec<String> {
 
     while let Some(c) = chars.next() {
         match c {
+            '\\' if quote_char.is_none() => {
+                if let Some(next_char) = chars.next() {
+                    current.push(next_char);
+                }
+            }
             '\'' | '"' => {
                 match quote_char {
                     None => quote_char = Some(c),
@@ -37,7 +42,6 @@ fn tokenize(input: &str) -> Vec<String> {
 
     result
 }
-
 fn main() {
     let path_env = std::env::var("PATH").unwrap();
     let home_env = std::env::var("HOME").unwrap();
@@ -174,5 +178,9 @@ mod tests {
         // Test with mixed quotes
         let s3 = "'hello world'  \"foo bar\"  'baz'";
         assert_eq!(tokenize(s3), vec!["hello world", "foo bar", "baz"]);
+        let s4 = "before\\   after";
+        assert_eq!(tokenize(s4), vec!["before\\   after"]);
+        let s5 = "world\\ \\ \\ \\ \\ \\ script";
+        assert_eq!(tokenize(s5), vec!["world      script"]);
     }
 }

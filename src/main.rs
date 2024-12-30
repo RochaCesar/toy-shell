@@ -13,26 +13,37 @@ fn tokenize(input: &str) -> Vec<String> {
     let mut chars = input.chars().peekable();
 
     while let Some(c) = chars.next() {
-        match c {
-            '\\' if quote_char.is_none() => {
+        match (c, quote_char) {
+            // Backslash outside quotes
+            ('\\', None) => {
                 if let Some(next_char) = chars.next() {
                     current.push(next_char);
                 }
             }
-            '\'' | '"' => {
-                match quote_char {
-                    None => quote_char = Some(c),
-                    Some(q) if q == c => quote_char = None,
-                    Some(_) => current.push(c), // Different quote type, treat as normal char
+            // Backslash inside double quotes
+            ('\\', Some('"')) => {
+                if let Some(next_char) = chars.next() {
+                    match next_char {
+                        '\\' | '$' | '"' | '\n' => current.push(next_char),
+                        _ => {
+                            current.push('\\');
+                            current.push(next_char);
+                        }
+                    }
                 }
             }
-            ' ' if quote_char.is_none() => {
+            // Quote handling
+            ('\'' | '"', None) => quote_char = Some(c),
+            ('"', Some('"')) | ('\'', Some('\'')) => quote_char = None,
+            // Space handling
+            (' ', None) => {
                 if !current.is_empty() {
                     result.push(current.clone());
                     current.clear();
                 }
             }
-            _ => current.push(c),
+            // All other characters
+            (c, _) => current.push(c),
         }
     }
 
@@ -42,6 +53,7 @@ fn tokenize(input: &str) -> Vec<String> {
 
     result
 }
+
 fn main() {
     let path_env = std::env::var("PATH").unwrap();
     let home_env = std::env::var("HOME").unwrap();

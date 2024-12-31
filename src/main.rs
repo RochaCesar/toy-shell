@@ -89,7 +89,10 @@ fn append_to_file(path: &Path, content: &str) -> std::io::Result<()> {
         .append(true) // Open in append mode
         .open(path)?;
 
-    writeln!(file, "{}", content)?;
+    if !content.is_empty() {
+        writeln!(file, "{}", content)?;
+    }
+
     Ok(())
 }
 

@@ -226,7 +226,7 @@ fn main() {
             }
             Output::StdOut => {
                 if !output.is_empty() {
-                    println!("{}", output);
+                    println!("{}", output.trim());
                 }
             }
         }

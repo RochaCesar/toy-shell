@@ -95,19 +95,15 @@ fn main() {
                     let path = Path::new(&file_name);
                     let display = path.display();
 
-                    let mut file = match File::open(&path) {
-                        Err(_) => {
-                            println!("cat: {}: No such file or directory", file_name);
-                            continue;
-                            // panic!("couldn't open {}: {}", display, why),
+                    if let Ok(mut file) = File::open(&path) {
+                        let mut s = String::new();
+
+                        match file.read_to_string(&mut s) {
+                            Err(why) => panic!("couldn't read {}: {}", display, why),
+                            Ok(_) => result.push(s),
                         }
-                        Ok(file) => file,
-                    };
-                    // Read the file contents into a string, returns `io::Result<usize>`
-                    let mut s = String::new();
-                    match file.read_to_string(&mut s) {
-                        Err(why) => panic!("couldn't read {}: {}", display, why),
-                        Ok(_) => result.push(s),
+                    } else {
+                        println!("cat: {}: No such file or directory", file_name);
                     }
                 }
                 format!("{}", result.concat())

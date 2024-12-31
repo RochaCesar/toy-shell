@@ -278,11 +278,12 @@ fn main() {
                         std::fs::write(filename, "").expect("failed");
                     }
                     Err(ErrorKind::CompleteFailure(error_message)) => {
-                        std::fs::write(filename, error_message).expect("failed");
+                        std::fs::write(filename, error_message.trim()).expect("failed");
                     }
                     Err(ErrorKind::PartialSuccess(partial_success)) => {
-                        std::fs::write(filename, partial_success.error_info).expect("failed");
-                        println!("{}", partial_success.success_data);
+                        std::fs::write(filename, partial_success.error_info.trim())
+                            .expect("failed");
+                        println!("{}", partial_success.success_data.trim());
                     }
                 }
             }

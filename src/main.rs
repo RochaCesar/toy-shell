@@ -295,7 +295,7 @@ fn main() {
                     Err(ErrorKind::PartialSuccess(partial_success)) => {
                         append_to_file(path, &partial_success.success_data)
                             .expect("Error happened");
-                        println!("{}", partial_success.error_info);
+                        println!("{}", partial_success.error_info.trim());
                     }
                 }
             }

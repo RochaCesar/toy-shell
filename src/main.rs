@@ -82,10 +82,20 @@ fn main() {
         let command = args.next().unwrap();
 
         let output: String = match command.as_str() {
-            "echo" => args.fold(String::new(), |mut acc, s| {
-                acc.push_str(s);
-                acc
-            }),
+            "echo" => {
+                let mut result = String::new();
+                let mut first = true;
+
+                for s in args {
+                    if !first {
+                        result.push(' ');
+                    }
+                    result.push_str(s);
+                    first = false;
+                }
+
+                result
+            }
             "cat" => {
                 use std::fs::File;
                 use std::path::Path;

@@ -122,7 +122,7 @@ fn main() {
                 let next = args.next();
                 let path = next.unwrap();
 
-                if path == "" || path == " " || path == " ~" {
+                if path == "" || path == " " || path == "~" {
                     // Go home on empty path
                     let target = Path::new(&home_env);
                     if let Err(_) = std::env::set_current_dir(&target) {

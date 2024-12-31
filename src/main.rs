@@ -88,7 +88,7 @@ fn append_to_file(path: &Path, content: &str) -> std::io::Result<()> {
         .append(true) // Open in append mode
         .open(path)?;
 
-    writeln!(file, "\n{}", content)?;
+    writeln!(file, "{}", content)?;
     Ok(())
 }
 
@@ -310,10 +310,11 @@ fn main() {
                         std::fs::write(filename, "").expect("failed");
                     }
                     Err(ErrorKind::CompleteFailure(error_message)) => {
-                        std::fs::write(filename, error_message).expect("failed");
+                        std::fs::write(filename, error_message + "\n").expect("failed");
                     }
                     Err(ErrorKind::PartialSuccess(partial_success)) => {
-                        std::fs::write(filename, partial_success.error_info).expect("failed");
+                        std::fs::write(filename, partial_success.error_info + "\n")
+                            .expect("failed");
                         println!("{}", partial_success.success_data);
                     }
                 }
@@ -322,12 +323,15 @@ fn main() {
                 let filename = vec2.iter().skip(1).next().unwrap();
 
                 match output {
-                    Ok(correct_output) => std::fs::write(filename, correct_output).expect("failed"),
+                    Ok(correct_output) => {
+                        std::fs::write(filename, correct_output + "\n").expect("failed")
+                    }
                     Err(ErrorKind::CompleteFailure(error_message)) => {
                         eprintln!("{}", error_message.trim())
                     }
                     Err(ErrorKind::PartialSuccess(partial_success)) => {
-                        std::fs::write(filename, partial_success.success_data).expect("failed");
+                        std::fs::write(filename, partial_success.success_data + "\n")
+                            .expect("failed");
                         eprintln!("{}", partial_success.error_info);
                     }
                 }

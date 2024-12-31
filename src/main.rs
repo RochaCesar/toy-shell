@@ -290,7 +290,7 @@ fn main() {
                     }
                     Err(ErrorKind::CompleteFailure(error_message)) => {
                         append_to_file(path, "").expect("Error happened");
-                        println!("{}", error_message);
+                        println!("{}", error_message.trim());
                     }
                     Err(ErrorKind::PartialSuccess(partial_success)) => {
                         append_to_file(path, &partial_success.success_data)

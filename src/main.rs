@@ -54,6 +54,11 @@ fn tokenize(input: &str) -> Vec<String> {
     result
 }
 
+enum Output {
+    RedirectStdOut(Vec<String>),
+    StdOut,
+}
+
 fn main() {
     let path_env = std::env::var("PATH").unwrap();
     let home_env = std::env::var("HOME").unwrap();
@@ -63,112 +68,162 @@ fn main() {
         let stdin = io::stdin();
         let mut input = String::new();
         stdin.read_line(&mut input).unwrap();
-        let trimmed = input.as_str().trim();
 
-        if let Some(rest) = trimmed.strip_prefix("echo") {
-            let result = tokenize(rest);
-
-            println!("{}", result.join(" "));
-        } else if let Some(files) = trimmed.strip_prefix("cat") {
-            use std::fs::File;
-            use std::path::Path;
-
-            let result = tokenize(&files);
-
-            for file_name in result {
-                let path = Path::new(&file_name);
-                let display = path.display();
-
-                let mut file = match File::open(&path) {
-                    Err(why) => panic!("couldn't open {}: {}", display, why),
-                    Ok(file) => file,
-                };
-                // Read the file contents into a string, returns `io::Result<usize>`
-                let mut s = String::new();
-                match file.read_to_string(&mut s) {
-                    Err(why) => panic!("couldn't read {}: {}", display, why),
-                    Ok(_) => print!("{}", s),
-                }
-            }
-        } else if let Some(path) = trimmed.strip_prefix("cd") {
-            if path == "" || path == " " || path == " ~" {
-                // Go home on empty path
-                let target = Path::new(&home_env);
-                if let Err(_) = std::env::set_current_dir(&target) {
-                    println!("cd: {}: No such file or directory", target.display());
-                }
-            } else if path.chars().nth(1).unwrap() == '/' {
-                // Handle absolute paths
-                let absolute_path = path.chars().skip(1).collect::<String>();
-                let target = Path::new(&absolute_path);
-
-                if let Err(_) = std::env::set_current_dir(&target) {
-                    println!("cd: {}: No such file or directory", target.display());
-                }
+        let mut parts: Vec<String> = tokenize(input.trim());
+        let io_stream =
+            if let Some(redirect_index) = parts.iter().position(|x| x == ">" || x == "1>") {
+                let vec2 = parts.split_off(redirect_index);
+                Output::RedirectStdOut(vec2)
             } else {
-                let get_current_directory = std::env::current_dir().expect("Invalid Directory");
-                let current_directory = get_current_directory
-                    .to_str()
-                    .expect("Error converting to string");
-                let target_directory = current_directory
-                    .chars()
-                    .chain(std::iter::once('/'))
-                    .chain(path.chars().skip(1))
-                    .collect::<String>();
-                let mut destination = vec![];
-                for directory in target_directory.split("/") {
-                    match directory {
-                        "." => {}
-                        ".." => {
-                            destination.pop().unwrap();
-                        }
-                        _ => {
-                            destination.push(directory);
-                        }
+                Output::StdOut
+            };
+
+        let mut args = parts.iter_mut();
+        let command = args.next().unwrap();
+
+        let output: String = match command.as_str() {
+            "echo" => args.fold(String::new(), |mut acc, s| {
+                acc.push_str(s);
+                acc
+            }),
+            "cat" => {
+                use std::fs::File;
+                use std::path::Path;
+
+                let mut result = vec![];
+                for file_name in args {
+                    let path = Path::new(&file_name);
+                    let display = path.display();
+
+                    let mut file = match File::open(&path) {
+                        Err(why) => panic!("couldn't open {}: {}", display, why),
+                        Ok(file) => file,
+                    };
+                    // Read the file contents into a string, returns `io::Result<usize>`
+                    let mut s = String::new();
+                    match file.read_to_string(&mut s) {
+                        Err(why) => panic!("couldn't read {}: {}", display, why),
+                        Ok(_) => result.push(s),
                     }
                 }
-                let final_destination = destination.join("/");
-                let target = Path::new(&final_destination);
-
-                if let Err(_) = std::env::set_current_dir(&target) {
-                    println!("cd: {}: No such file or directory", target.display());
-                }
-            };
-        } else if let Some(_) = trimmed.strip_prefix("pwd") {
-            println!(
-                "{}",
-                std::env::current_dir()
-                    .expect("Invalid Directory")
-                    .display()
-            );
-        } else if let Some(code) = trimmed.strip_prefix("exit ") {
-            process::exit(code.parse::<i32>().expect("Not a number"));
-        } else if let Some(command) = trimmed.strip_prefix("type ") {
-            let mut paths = path_env.split(":");
-            if command == "cd"
-                || command == "echo"
-                || command == "exit"
-                || command == "type"
-                || command == "pwd"
-            {
-                println!("{command} is a shell builtin")
-            } else if let Some(found) =
-                paths.find(|path| std::fs::metadata(format!("{path}/{command}")).is_ok())
-            {
-                println!("{command} is {found}/{command}")
-            } else {
-                println!("{command}: not found")
+                format!("{}", result.concat())
             }
-        } else {
-            let parts = tokenize(input.trim());
-            // let mut parts = input.trim().split_whitespace();
-            let command = parts.first().unwrap().clone();
-            let args = parts.iter().skip(1).collect::<Vec<&String>>();
+            "cd" => {
+                let next = args.next();
+                let path = next.unwrap();
 
-            if let Ok(mut child) = std::process::Command::new(&command).args(args).spawn() {
-                let _ = child.wait();
-            } else {
-                println!("{}: command not found", &command);
+                if path == "" || path == " " || path == " ~" {
+                    // Go home on empty path
+                    let target = Path::new(&home_env);
+                    if let Err(_) = std::env::set_current_dir(&target) {
+                        println!("cd: {}: No such file or directory", target.display());
+                    }
+                } else if &path[0..1] == "/" {
+                    // Handle absolute paths
+                    let target = Path::new(&path);
+
+                    if let Err(_) = std::env::set_current_dir(&target) {
+                        println!("cd: {}: No such file or directory", target.display());
+                    }
+                } else {
+                    let get_current_directory = std::env::current_dir().expect("Invalid Directory");
+                    let current_directory = get_current_directory
+                        .to_str()
+                        .expect("Error converting to string");
+                    let target_directory = current_directory
+                        .chars()
+                        .chain(std::iter::once('/'))
+                        .chain(path.chars())
+                        .collect::<String>();
+                    let mut destination = vec![];
+                    for directory in target_directory.split("/") {
+                        match directory {
+                            "." => {}
+                            ".." => {
+                                destination.pop().unwrap();
+                            }
+                            _ => {
+                                destination.push(directory);
+                            }
+                        }
+                    }
+                    let final_destination = destination.join("/");
+                    let target = Path::new(&final_destination);
+
+                    if let Err(_) = std::env::set_current_dir(&target) {
+                        println!("cd: {}: No such file or directory", target.display());
+                    }
+                };
+
+                // on successful `cd` do not print anything
+                String::new()
+            }
+            "pwd" => {
+                // println!(
+                format!(
+                    "{}",
+                    std::env::current_dir()
+                        .expect("Invalid Directory")
+                        .display()
+                )
+            }
+            "exit" => {
+                if let Some(code) = args.next() {
+                    process::exit(code.parse::<i32>().expect("Not a number"));
+                }
+                String::new()
+            }
+            "type" => {
+                let mut paths = path_env.split(":");
+                if let Some(argument) = args.next() {
+                    if argument == "cd"
+                        || argument == "echo"
+                        || argument == "exit"
+                        || argument == "type"
+                        || argument == "pwd"
+                        || argument == "cat"
+                    {
+                        format!("{argument} is a shell builtin")
+                    } else if let Some(found) =
+                        paths.find(|path| std::fs::metadata(format!("{path}/{argument}")).is_ok())
+                    {
+                        format!("{argument} is {found}/{argument}")
+                    } else {
+                        format!("{argument}: not found")
+                    }
+                } else {
+                    // TODO
+                    String::new()
+                }
+            }
+            _ => {
+                let command_output = if let Ok(child) = std::process::Command::new(&command)
+                    .args(args)
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    if let Ok(output) = child.wait_with_output() {
+                        String::from_utf8_lossy(&output.stdout).to_string()
+                    } else {
+                        String::from("Failed to get output")
+                    }
+                } else {
+                    format!("{}: command not found", &command)
+                };
+                command_output.trim().to_string()
+            }
+        };
+
+        match io_stream {
+            Output::RedirectStdOut(vec2) => {
+                let filename = vec2.iter().skip(1).next().unwrap();
+
+                std::fs::write(filename, output).expect("failed")
+            }
+            Output::StdOut => {
+                if !output.is_empty() {
+                    println!("{}", output);
+                }
             }
         }
     }

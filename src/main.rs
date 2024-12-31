@@ -275,6 +275,7 @@ fn main() {
                         if !correct_output.is_empty() {
                             println!("{}", correct_output.trim());
                         }
+                        std::fs::write(filename, "").expect("failed");
                     }
                     Err(ErrorKind::CompleteFailure(error_message)) => {
                         std::fs::write(filename, error_message).expect("failed");

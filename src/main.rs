@@ -332,7 +332,7 @@ fn main() {
                     Err(ErrorKind::PartialSuccess(partial_success)) => {
                         std::fs::write(filename, partial_success.success_data + "\n")
                             .expect("failed");
-                        eprintln!("{}", partial_success.error_info);
+                        println!("{}", partial_success.error_info);
                     }
                 }
             }

@@ -1,4 +1,4 @@
-use std::env::*;
+use std::fs::OpenOptions;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::path::Path;
@@ -17,6 +17,7 @@ enum ErrorKind {
 }
 
 enum Output {
+    AppendStdOut(Vec<String>),
     RedirectStdOut(Vec<String>),
     RedirectStdErr(Vec<String>),
     StdOut,
@@ -78,8 +79,17 @@ fn process_partial_results(results: String, error_results: String) -> Result<Str
         })),
         (true, _) => Err(ErrorKind::CompleteFailure(error_results)),
         (false, true) => Ok(results),
-        _ => panic!("uncovered error"),
     }
+}
+
+fn append_to_file(path: &Path, content: &str) -> std::io::Result<()> {
+    let mut file = OpenOptions::new()
+        .create(true) // Create the file if it doesn't exist
+        .append(true) // Open in append mode
+        .open(path)?;
+
+    writeln!(file, "{}", content)?;
+    Ok(())
 }
 
 fn main() {
@@ -97,6 +107,9 @@ fn main() {
         let io_stream = if let Some(redirect_index) = parts.iter().position(|x| x == "2>") {
             let vec2 = parts.split_off(redirect_index);
             Output::RedirectStdErr(vec2)
+        } else if let Some(redirect_index) = parts.iter().position(|x| x == ">>" || x == "1>>") {
+            let vec2 = parts.split_off(redirect_index);
+            Output::AppendStdOut(vec2)
         } else if let Some(redirect_index) = parts.iter().position(|x| x == ">" || x == "1>") {
             let vec2 = parts.split_off(redirect_index);
             Output::RedirectStdOut(vec2)
@@ -267,6 +280,25 @@ fn main() {
         };
 
         match io_stream {
+            Output::AppendStdOut(vec2) => {
+                let filename = vec2.iter().skip(1).next().unwrap();
+                let path = Path::new(filename);
+
+                match output {
+                    Ok(correct_output) => {
+                        append_to_file(path, correct_output.as_str()).expect("Error happened");
+                    }
+                    Err(ErrorKind::CompleteFailure(error_message)) => {
+                        append_to_file(path, "").expect("Error happened");
+                        eprintln!("{}", error_message);
+                    }
+                    Err(ErrorKind::PartialSuccess(partial_success)) => {
+                        append_to_file(path, partial_success.success_data.trim())
+                            .expect("Error happened");
+                        eprintln!("{}", partial_success.error_info.trim());
+                    }
+                }
+            }
             Output::RedirectStdErr(vec2) => {
                 let filename = vec2.iter().skip(1).next().unwrap();
 

@@ -290,12 +290,12 @@ fn main() {
                     }
                     Err(ErrorKind::CompleteFailure(error_message)) => {
                         append_to_file(path, "").expect("Error happened");
-                        eprintln!("{}", error_message);
+                        println!("{}", error_message);
                     }
                     Err(ErrorKind::PartialSuccess(partial_success)) => {
                         append_to_file(path, &partial_success.success_data)
                             .expect("Error happened");
-                        eprintln!("{}", partial_success.error_info);
+                        println!("{}", partial_success.error_info);
                     }
                 }
             }
@@ -327,7 +327,7 @@ fn main() {
                         std::fs::write(filename, correct_output + "\n").expect("failed")
                     }
                     Err(ErrorKind::CompleteFailure(error_message)) => {
-                        eprintln!("{}", error_message.trim())
+                        println!("{}", error_message.trim())
                     }
                     Err(ErrorKind::PartialSuccess(partial_success)) => {
                         std::fs::write(filename, partial_success.success_data + "\n")

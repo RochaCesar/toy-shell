@@ -191,7 +191,7 @@ fn main() {
                         || argument == "exit"
                         || argument == "type"
                         || argument == "pwd"
-                        || argument == "cat"
+                    // || argument == "cat"
                     {
                         format!("{argument} is a shell builtin")
                     } else if let Some(found) =

@@ -286,7 +286,8 @@ fn main() {
 
                 match output {
                     Ok(correct_output) => {
-                        append_to_file(path, correct_output.as_str()).expect("Error happened");
+                        append_to_file(path, correct_output.as_str().trim())
+                            .expect("Error happened");
                     }
                     Err(ErrorKind::CompleteFailure(error_message)) => {
                         append_to_file(path, "").expect("Error happened");
@@ -315,7 +316,7 @@ fn main() {
                     Err(ErrorKind::PartialSuccess(partial_success)) => {
                         std::fs::write(filename, partial_success.error_info + "\n")
                             .expect("failed");
-                        println!("{}", partial_success.success_data);
+                        println!("{}", partial_success.success_data.trim());
                     }
                 }
             }

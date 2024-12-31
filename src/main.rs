@@ -17,6 +17,7 @@ enum ErrorKind {
 }
 
 enum Output {
+    AppendStdErr(Vec<String>),
     AppendStdOut(Vec<String>),
     RedirectStdOut(Vec<String>),
     RedirectStdErr(Vec<String>),
@@ -104,7 +105,10 @@ fn main() {
 
         let mut parts: Vec<String> = tokenize(input.trim());
 
-        let io_stream = if let Some(redirect_index) = parts.iter().position(|x| x == "2>") {
+        let io_stream = if let Some(redirect_index) = parts.iter().position(|x| x == "2>>") {
+            let vec2 = parts.split_off(redirect_index);
+            Output::AppendStdErr(vec2)
+        } else if let Some(redirect_index) = parts.iter().position(|x| x == "2>") {
             let vec2 = parts.split_off(redirect_index);
             Output::RedirectStdErr(vec2)
         } else if let Some(redirect_index) = parts.iter().position(|x| x == ">>" || x == "1>>") {
@@ -280,6 +284,26 @@ fn main() {
         };
 
         match io_stream {
+            Output::AppendStdErr(vec2) => {
+                let filename = vec2.iter().skip(1).next().unwrap();
+                let path = Path::new(filename);
+
+                match output {
+                    Ok(correct_output) => {
+                        append_to_file(path, "").expect("Error happened");
+                        println!("{}", correct_output.as_str().trim());
+                    }
+                    Err(ErrorKind::CompleteFailure(error_message)) => {
+                        append_to_file(path, error_message.trim()).expect("Error happened");
+                        // println!("{}", error_message.trim());
+                    }
+                    Err(ErrorKind::PartialSuccess(partial_success)) => {
+                        append_to_file(path, &partial_success.error_info.trim())
+                            .expect("Error happened");
+                        println!("{}", partial_success.success_data.trim());
+                    }
+                }
+            }
             Output::AppendStdOut(vec2) => {
                 let filename = vec2.iter().skip(1).next().unwrap();
                 let path = Path::new(filename);
@@ -290,7 +314,7 @@ fn main() {
                             .expect("Error happened");
                     }
                     Err(ErrorKind::CompleteFailure(error_message)) => {
-                        append_to_file(path, "").expect("Error happened");
+                        if let Ok(_) = append_to_file(path, "") {}
                         println!("{}", error_message.trim());
                     }
                     Err(ErrorKind::PartialSuccess(partial_success)) => {

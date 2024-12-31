@@ -143,7 +143,7 @@ fn main() {
                         error_result.push(format!("cat: {}: No such file or directory", file_name));
                     }
                 }
-                process_partial_results(result.join("\n"), error_result.join("\n"))
+                process_partial_results(result.concat(), error_result.concat())
             }
             "cd" => {
                 let next = args.next();

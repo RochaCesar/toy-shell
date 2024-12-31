@@ -6,6 +6,22 @@ use std::process;
 
 use std::io::prelude::*;
 
+struct PartialSuccess {
+    success_data: String,
+    error_info: String,
+}
+
+enum ErrorKind {
+    PartialSuccess(PartialSuccess),
+    CompleteFailure(String),
+}
+
+enum Output {
+    RedirectStdOut(Vec<String>),
+    RedirectStdErr(Vec<String>),
+    StdOut,
+}
+
 fn tokenize(input: &str) -> Vec<String> {
     let mut result = Vec::new();
     let mut current = String::new();
@@ -54,9 +70,16 @@ fn tokenize(input: &str) -> Vec<String> {
     result
 }
 
-enum Output {
-    RedirectStdOut(Vec<String>),
-    StdOut,
+fn process_partial_results(results: String, error_results: String) -> Result<String, ErrorKind> {
+    match (results.is_empty(), error_results.is_empty()) {
+        (false, false) => Err(ErrorKind::PartialSuccess(PartialSuccess {
+            success_data: results,
+            error_info: error_results,
+        })),
+        (true, _) => Err(ErrorKind::CompleteFailure(error_results)),
+        (false, true) => Ok(results),
+        _ => panic!("uncovered error"),
+    }
 }
 
 fn main() {
@@ -70,18 +93,21 @@ fn main() {
         stdin.read_line(&mut input).unwrap();
 
         let mut parts: Vec<String> = tokenize(input.trim());
-        let io_stream =
-            if let Some(redirect_index) = parts.iter().position(|x| x == ">" || x == "1>") {
-                let vec2 = parts.split_off(redirect_index);
-                Output::RedirectStdOut(vec2)
-            } else {
-                Output::StdOut
-            };
+
+        let io_stream = if let Some(redirect_index) = parts.iter().position(|x| x == "2>") {
+            let vec2 = parts.split_off(redirect_index);
+            Output::RedirectStdErr(vec2)
+        } else if let Some(redirect_index) = parts.iter().position(|x| x == ">" || x == "1>") {
+            let vec2 = parts.split_off(redirect_index);
+            Output::RedirectStdOut(vec2)
+        } else {
+            Output::StdOut
+        };
 
         let mut args = parts.iter_mut();
         let command = args.next().unwrap();
 
-        let output: String = match command.as_str() {
+        let output: Result<String, ErrorKind> = match command.as_str() {
             "echo" => {
                 let mut result = String::new();
                 let mut first = true;
@@ -94,13 +120,14 @@ fn main() {
                     first = false;
                 }
 
-                result
+                Ok(result)
             }
             "cat" => {
                 use std::fs::File;
                 use std::path::Path;
 
                 let mut result = vec![];
+                let mut error_result = vec![];
                 for file_name in args {
                     let path = Path::new(&file_name);
                     let display = path.display();
@@ -113,10 +140,10 @@ fn main() {
                             Ok(_) => result.push(s),
                         }
                     } else {
-                        println!("cat: {}: No such file or directory", file_name);
+                        error_result.push(format!("cat: {}: No such file or directory", file_name));
                     }
                 }
-                format!("{}", result.concat())
+                process_partial_results(result.join(" "), error_result.join(" "))
             }
             "cd" => {
                 let next = args.next();
@@ -125,15 +152,23 @@ fn main() {
                 if path == "" || path == " " || path == "~" {
                     // Go home on empty path
                     let target = Path::new(&home_env);
-                    if let Err(_) = std::env::set_current_dir(&target) {
-                        println!("cd: {}: No such file or directory", target.display());
+                    match std::env::set_current_dir(&target) {
+                        Err(_) => Err(ErrorKind::CompleteFailure(format!(
+                            "cd: {}: No such file or directory",
+                            target.display()
+                        ))),
+                        Ok(_) => Ok(String::new()),
                     }
                 } else if &path[0..1] == "/" {
                     // Handle absolute paths
                     let target = Path::new(&path);
 
-                    if let Err(_) = std::env::set_current_dir(&target) {
-                        println!("cd: {}: No such file or directory", target.display());
+                    match std::env::set_current_dir(&target) {
+                        Err(_) => Err(ErrorKind::CompleteFailure(format!(
+                            "cd: {}: No such file or directory",
+                            target.display()
+                        ))),
+                        _ => Ok(String::new()),
                     }
                 } else {
                     let get_current_directory = std::env::current_dir().expect("Invalid Directory");
@@ -158,30 +193,32 @@ fn main() {
                         }
                     }
                     let final_destination = destination.join("/");
+
                     let target = Path::new(&final_destination);
 
-                    if let Err(_) = std::env::set_current_dir(&target) {
-                        println!("cd: {}: No such file or directory", target.display());
+                    match std::env::set_current_dir(&target) {
+                        Err(_) => Err(ErrorKind::CompleteFailure(format!(
+                            "cd: {}: No such file or directory",
+                            target.display()
+                        ))),
+                        _ => Ok(String::new()),
                     }
-                };
-
-                // on successful `cd` do not print anything
-                String::new()
+                }
             }
             "pwd" => {
                 // println!(
-                format!(
+                Ok(format!(
                     "{}",
                     std::env::current_dir()
                         .expect("Invalid Directory")
                         .display()
-                )
+                ))
             }
             "exit" => {
                 if let Some(code) = args.next() {
                     process::exit(code.parse::<i32>().expect("Not a number"));
                 }
-                String::new()
+                Ok(String::new())
             }
             "type" => {
                 let mut paths = path_env.split(":");
@@ -193,48 +230,87 @@ fn main() {
                         || argument == "pwd"
                     // || argument == "cat"
                     {
-                        format!("{argument} is a shell builtin")
+                        Ok(format!("{argument} is a shell builtin"))
                     } else if let Some(found) =
                         paths.find(|path| std::fs::metadata(format!("{path}/{argument}")).is_ok())
                     {
-                        format!("{argument} is {found}/{argument}")
+                        Ok(format!("{argument} is {found}/{argument}"))
                     } else {
-                        format!("{argument}: not found")
+                        Err(ErrorKind::CompleteFailure(format!("{argument}: not found")))
                     }
                 } else {
                     // TODO
-                    String::new()
+                    Ok(String::new())
                 }
             }
             _ => {
-                let command_output = if let Ok(child) = std::process::Command::new(&command)
+                if let Ok(child) = std::process::Command::new(&command)
                     .args(args)
                     .stdout(std::process::Stdio::piped())
-                    .spawn()
+                    .output()
                 {
-                    if let Ok(output) = child.wait_with_output() {
-                        String::from_utf8_lossy(&output.stdout).to_string()
-                    } else {
-                        String::from("Failed to get output")
-                    }
+                    // if let Ok(output) = child.wait_with_output() {
+                    //     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                    // } else {
+                    //     Err(ErrorKind::CompleteFailure(format!("Failed to get output")))
+                    // }
+                    let stdout = String::from_utf8_lossy(&child.stdout).to_string();
+                    let stderr = String::from_utf8_lossy(&child.stderr).to_string();
+                    process_partial_results(stdout, stderr)
                 } else {
-                    format!("{}: command not found", &command)
-                };
-                command_output.trim().to_string()
+                    Err(ErrorKind::CompleteFailure(format!(
+                        "{}: command not found",
+                        &command
+                    )))
+                }
             }
         };
 
         match io_stream {
+            Output::RedirectStdErr(vec2) => {
+                let filename = vec2.iter().skip(1).next().unwrap();
+
+                match output {
+                    Ok(correct_output) => {
+                        if !correct_output.is_empty() {
+                            println!("{}", correct_output.trim());
+                        }
+                    }
+                    Err(ErrorKind::CompleteFailure(error_message)) => {
+                        std::fs::write(filename, error_message).expect("failed");
+                    }
+                    Err(ErrorKind::PartialSuccess(partial_success)) => {
+                        std::fs::write(filename, partial_success.error_info).expect("failed");
+                        println!("{}", partial_success.success_data);
+                    }
+                }
+            }
             Output::RedirectStdOut(vec2) => {
                 let filename = vec2.iter().skip(1).next().unwrap();
 
-                std::fs::write(filename, output).expect("failed")
-            }
-            Output::StdOut => {
-                if !output.is_empty() {
-                    println!("{}", output.trim());
+                match output {
+                    Ok(correct_output) => std::fs::write(filename, correct_output).expect("failed"),
+                    Err(ErrorKind::CompleteFailure(error_message)) => {
+                        eprintln!("{}", error_message)
+                    }
+                    Err(ErrorKind::PartialSuccess(partial_success)) => {
+                        std::fs::write(filename, partial_success.success_data).expect("failed");
+                        eprintln!("{}", partial_success.error_info);
+                    }
                 }
             }
+            Output::StdOut => match output {
+                Ok(correct_output) => {
+                    if !correct_output.is_empty() {
+                        println!("{}", correct_output.trim());
+                    }
+                }
+                Err(ErrorKind::CompleteFailure(error_message)) => eprintln!("{}", error_message),
+                Err(ErrorKind::PartialSuccess(partial_success)) => {
+                    println!("{}", partial_success.success_data);
+                    eprintln!("{}", partial_success.error_info);
+                }
+            },
         }
     }
 }

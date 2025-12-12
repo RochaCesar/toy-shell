@@ -288,8 +288,6 @@ fn main() -> io::Result<()> {
                             Ok(String::new())
                         }
                         "type" => {
-                            let path_env = std::env::var("PATH").unwrap();
-                            let paths = path_env.split(":").collect::<Vec<_>>();
                             if let Some(argument) = args.next() {
                                 if argument == "cd"
                                     || argument == "echo"
@@ -299,10 +297,13 @@ fn main() -> io::Result<()> {
                                 // || argument == "cat"
                                 {
                                     Ok(format!("{argument} is a shell builtin"))
-                                } else if let Some(found) = paths.iter().find(|path| {
-                                    eprintln!("PATH={}", std::env::var("PATH").unwrap_or_default());
-                                    std::fs::metadata(format!("{path}/{argument}")).is_ok()
-                                }) {
+                                } else if let Some(found) = std::env::var("PATH")
+                                    .unwrap_or_default()
+                                    .split(":")
+                                    .find(|path| {
+                                        std::fs::metadata(format!("{path}/{argument}")).is_ok()
+                                    })
+                                {
                                     Ok(format!("{argument} is {found}/{argument}"))
                                 } else {
                                     Err(ErrorKind::CompleteFailure(format!(

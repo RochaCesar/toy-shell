@@ -135,7 +135,7 @@ fn main() -> io::Result<()> {
                         // Multiple completions - show them
                         write!(stdout, "\r\n")?;
                         for completion in &completions {
-                            write!(stdout, "{}  ", completion)?;
+                            write!(stdout, "{} ", completion)?;
                         }
                         write!(stdout, "\r\n")?;
                         shell.redraw_line(&mut stdout)?;
@@ -143,8 +143,6 @@ fn main() -> io::Result<()> {
                 }
                 Key::Char('\n') => {
                     write!(stdout, "\r\n")?;
-                    // Execute command here
-                    // For now, just echo it back
                     let mut parts: Vec<String> = tokenize(&shell.input);
 
                     let io_stream =

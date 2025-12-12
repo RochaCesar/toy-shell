@@ -128,7 +128,7 @@ fn main() -> io::Result<()> {
                         // No completions - do nothing
                     } else if completions.len() == 1 {
                         // Single completion - auto-complete
-                        shell.input = completions[0].clone();
+                        shell.input = completions[0].clone() + " ";
                         shell.cursor_pos = shell.input.len();
                         shell.redraw_line(&mut stdout)?;
                     } else {

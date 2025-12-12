@@ -299,7 +299,7 @@ fn main() -> io::Result<()> {
                                 // || argument == "cat"
                                 {
                                     Ok(format!("{argument} is a shell builtin"))
-                                } else if let Some(found) = paths.iter().rev().find(|path| {
+                                } else if let Some(found) = paths.iter().find(|path| {
                                     std::fs::metadata(format!("{path}/{argument}")).is_ok()
                                 }) {
                                     Ok(format!("{argument} is {found}/{argument}"))

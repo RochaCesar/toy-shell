@@ -108,7 +108,6 @@ fn append_to_file(path: &Path, content: &str) -> std::io::Result<()> {
 }
 
 fn main() -> io::Result<()> {
-    let path_env = std::env::var("PATH").unwrap();
     let home_env = std::env::var("HOME").unwrap();
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let mut shell = Shell::new();
@@ -289,6 +288,7 @@ fn main() -> io::Result<()> {
                             Ok(String::new())
                         }
                         "type" => {
+                            let path_env = std::env::var("PATH").unwrap();
                             let mut paths = path_env.split(":");
                             if let Some(argument) = args.next() {
                                 if argument == "cd"

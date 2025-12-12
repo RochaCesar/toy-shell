@@ -117,7 +117,6 @@ fn main() -> io::Result<()> {
         io::stdout().flush().unwrap();
 
         let stdin = io::stdin();
-        let mut input = String::new();
         // Read character by character
         for key in stdin.keys() {
             match key.unwrap() {
@@ -143,6 +142,7 @@ fn main() -> io::Result<()> {
                 }
                 Key::Char('\n') => {
                     write!(stdout, "\r\n")?;
+                    io::stdout().flush()?;
                     let mut parts: Vec<String> = tokenize(&shell.input);
 
                     let io_stream =
@@ -283,7 +283,7 @@ fn main() -> io::Result<()> {
                         "exit" => {
                             if let Some(code) = args.next() {
                                 drop(stdout); // Exit raw mode
-                                io::stdout().flush();
+                                io::stdout().flush()?;
                                 process::exit(code.parse::<i32>().expect("Not a number"));
                             }
                             Ok(String::new())
@@ -418,7 +418,9 @@ fn main() -> io::Result<()> {
                         Output::StdOut => match output {
                             Ok(correct_output) => {
                                 if !correct_output.is_empty() {
-                                    println!("{}", correct_output.trim());
+                                    let output = correct_output.replace("\n", "\r\n");
+                                    write!(stdout, "{}\r\n", output.trim())?;
+                                    stdout.flush()?;
                                 }
                             }
                             Err(ErrorKind::CompleteFailure(error_message)) => {
@@ -434,8 +436,8 @@ fn main() -> io::Result<()> {
                     // Reset for next command
                     shell.input.clear();
                     shell.cursor_pos = 0;
-                    write!(stdout, "$ ")?;
-                    stdout.flush()?;
+                    write!(stdout, "\r$ ").unwrap();
+                    io::stdout().flush().unwrap();
                 }
                 Key::Char(c) => {
                     shell.input.insert(shell.cursor_pos, c);

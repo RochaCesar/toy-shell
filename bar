@@ -1,0 +1,11 @@
+baz
+Cargo.lock
+Cargo.toml
+codecrafters.yml
+README.md
+rust-toolchain.toml
+shell.nix
+src
+target
+your_program.sh
+

@@ -301,7 +301,21 @@ fn main() -> io::Result<()> {
                                     .unwrap_or_default()
                                     .split(":")
                                     .find(|path| {
-                                        std::fs::metadata(format!("{path}/{argument}")).is_ok()
+                                        let file_path = format!("{path}/{argument}");
+                                        if let Ok(metadata) = std::fs::metadata(&file_path) {
+                                            #[cfg(unix)]
+                                            {
+                                                use std::os::unix::fs::PermissionsExt;
+                                                // Check if executable bit is set (0o111 = any execute permission)
+                                                metadata.permissions().mode() & 0o111 != 0
+                                            }
+                                            #[cfg(not(unix))]
+                                            {
+                                                true // On non-Unix, just check existence
+                                            }
+                                        } else {
+                                            false
+                                        }
                                     })
                                 {
                                     Ok(format!("{argument} is {found}/{argument}"))

@@ -284,8 +284,11 @@ fn main() -> io::Result<()> {
                                 drop(stdout); // Exit raw mode
                                 io::stdout().flush()?;
                                 process::exit(code.parse::<i32>().expect("Not a number"));
+                            } else {
+                                drop(stdout); // Exit raw mode
+                                io::stdout().flush()?;
+                                process::exit(0);
                             }
-                            Ok(String::new())
                         }
                         "type" => {
                             if let Some(argument) = args.next() {
@@ -308,10 +311,6 @@ fn main() -> io::Result<()> {
                                                 use std::os::unix::fs::PermissionsExt;
                                                 // Check if executable bit is set (0o111 = any execute permission)
                                                 metadata.permissions().mode() & 0o111 != 0
-                                            }
-                                            #[cfg(not(unix))]
-                                            {
-                                                true // On non-Unix, just check existence
                                             }
                                         } else {
                                             false

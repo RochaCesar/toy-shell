@@ -300,6 +300,7 @@ fn main() -> io::Result<()> {
                                 {
                                     Ok(format!("{argument} is a shell builtin"))
                                 } else if let Some(found) = paths.iter().find(|path| {
+                                    eprintln!("PATH={}", std::env::var("PATH").unwrap_or_default());
                                     std::fs::metadata(format!("{path}/{argument}")).is_ok()
                                 }) {
                                     Ok(format!("{argument} is {found}/{argument}"))
@@ -319,11 +320,6 @@ fn main() -> io::Result<()> {
                                 .stdout(std::process::Stdio::piped())
                                 .output()
                             {
-                                // if let Ok(output) = child.wait_with_output() {
-                                //     Ok(String::from_utf8_lossy(&output.stdout).to_string())
-                                // } else {
-                                //     Err(ErrorKind::CompleteFailure(format!("Failed to get output")))
-                                // }
                                 let stdout = String::from_utf8_lossy(&child.stdout).to_string();
                                 let stderr = String::from_utf8_lossy(&child.stderr).to_string();
                                 process_partial_results(stdout, stderr)

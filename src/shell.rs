@@ -98,15 +98,18 @@ impl Shell {
 
         first.chars().take(prefix_len).collect()
     }
-
     pub fn redraw_line<W: Write>(&self, stdout: &mut W) -> io::Result<()> {
-        write!(
-            stdout,
-            "\r{}$ {}{}",
-            termion::clear::CurrentLine,
-            self.input,
-            termion::cursor::Left((self.input.len() - self.cursor_pos) as u16)
-        )?;
+        let char_count = self.input.chars().count();
+        let move_back = char_count - self.cursor_pos;
+
+        write!(stdout, "\r{}", termion::clear::CurrentLine)?;
+        write!(stdout, "$ {}", self.input)?;
+
+        // Only move cursor if we need to
+        if move_back > 0 {
+            write!(stdout, "{}", termion::cursor::Left(move_back as u16))?;
+        }
+
         stdout.flush()
     }
 }

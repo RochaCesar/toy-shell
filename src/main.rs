@@ -113,7 +113,7 @@ fn main() -> io::Result<()> {
     let mut shell = Shell::new();
     loop {
         write!(stdout, "\r$ ").unwrap();
-        io::stdout().flush().unwrap();
+        io::stdout().flush()?;
 
         let stdin = io::stdin();
         // Read character by character

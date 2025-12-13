@@ -112,7 +112,7 @@ fn main() -> io::Result<()> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let mut shell = Shell::new();
     loop {
-        write!(stdout, "\r$ ").unwrap();
+        write!(stdout, "\r{}$ ", termion::clear::CurrentLine)?;
         io::stdout().flush()?;
 
         let stdin = io::stdin();
@@ -446,18 +446,37 @@ fn main() -> io::Result<()> {
                     // Reset for next command
                     shell.input.clear();
                     shell.cursor_pos = 0;
-                    write!(stdout, "\r$ ").unwrap();
+                    // Good - clear the entire line first
+                    write!(stdout, "\r{}$ ", termion::clear::CurrentLine)?;
                     io::stdout().flush().unwrap();
                 }
                 Key::Char(c) => {
-                    shell.input.insert(shell.cursor_pos, c);
+                    // Convert character position to byte position
+                    //
+                    let byte_pos = shell
+                        .input
+                        .char_indices()
+                        .nth(shell.cursor_pos)
+                        .map(|(pos, _)| pos)
+                        .unwrap_or(shell.input.len());
+
+                    shell.input.insert(byte_pos, c);
                     shell.cursor_pos += 1;
                     shell.redraw_line(&mut stdout)?;
                 }
                 Key::Backspace => {
                     if shell.cursor_pos > 0 {
-                        shell.input.remove(shell.cursor_pos - 1);
                         shell.cursor_pos -= 1;
+
+                        // Convert character position to byte position
+                        let byte_pos = shell
+                            .input
+                            .char_indices()
+                            .nth(shell.cursor_pos)
+                            .map(|(pos, _)| pos)
+                            .unwrap_or(shell.input.len());
+
+                        shell.input.remove(byte_pos);
                         shell.redraw_line(&mut stdout)?;
                     }
                 }

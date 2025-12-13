@@ -123,7 +123,6 @@ fn main() -> io::Result<()> {
                     let completions = shell.get_completions();
 
                     if completions.is_empty() {
-                        // No completions - do nothing
                         write!(stdout, "\r\x07")?;
                     } else if completions.len() == 1 {
                         // Single completion - auto-complete

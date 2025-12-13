@@ -134,7 +134,7 @@ fn main() -> io::Result<()> {
                         // Multiple completions - show them
                         write!(stdout, "\r\n")?;
                         for completion in &completions {
-                            write!(stdout, "{} ", completion)?;
+                            write!(stdout, "{}  ", completion)?;
                         }
                         write!(stdout, "\r\n")?;
                         shell.redraw_line(&mut stdout)?;

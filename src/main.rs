@@ -1,3 +1,4 @@
+pub mod builtins;
 pub mod shell;
 use shell::*;
 use std::fs::OpenOptions;
@@ -183,20 +184,7 @@ fn main() -> io::Result<()> {
                     let command = args.next().unwrap();
 
                     let output: Result<String, ErrorKind> = match command.as_str() {
-                        "echo" => {
-                            let mut result = String::new();
-                            let mut first = true;
-
-                            for s in args {
-                                if !first {
-                                    result.push(' ');
-                                }
-                                result.push_str(s);
-                                first = false;
-                            }
-
-                            Ok(result)
-                        }
+                        "echo" => Ok(args.as_slice().join(" ")),
                         "cat" => {
                             use std::fs::File;
                             use std::path::Path;

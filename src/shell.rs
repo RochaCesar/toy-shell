@@ -9,12 +9,14 @@ use termion::raw::IntoRawMode;
 pub struct Shell {
     pub input: String,
     pub cursor_pos: usize,
+    pub last_key_was_tab: bool, // ← Add this
 }
 impl Shell {
     pub fn new() -> Self {
         Shell {
             input: String::new(),
             cursor_pos: 0,
+            last_key_was_tab: false,
         }
     }
 

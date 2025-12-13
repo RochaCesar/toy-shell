@@ -130,7 +130,7 @@ fn main() -> io::Result<()> {
                         shell.input = completions[0].clone() + " ";
                         shell.cursor_pos = shell.input.len();
                         shell.redraw_line(&mut stdout)?;
-                    } else {
+                    } else if shell.last_key_was_tab {
                         // Multiple completions - show them
                         write!(stdout, "\r\n")?;
                         for completion in &completions {
@@ -138,9 +138,22 @@ fn main() -> io::Result<()> {
                         }
                         write!(stdout, "\r\n")?;
                         shell.redraw_line(&mut stdout)?;
+                    } else {
+                        // First tab - complete common prefix or ring bell
+                        let common = shell.find_common_prefix(&completions);
+                        if common.len() > shell.cursor_pos {
+                            shell.input = common;
+                            shell.cursor_pos = shell.input.chars().count();
+                            shell.redraw_line(&mut stdout)?;
+                        } else {
+                            write!(stdout, "\x07")?;
+                            stdout.flush()?;
+                        }
                     }
+                    shell.last_key_was_tab = true; // ← Mark that tab was pressed
                 }
                 Key::Char('\n') => {
+                    shell.last_key_was_tab = false;
                     write!(stdout, "\r\n")?;
                     io::stdout().flush()?;
                     let mut parts: Vec<String> = tokenize(&shell.input);
@@ -452,6 +465,7 @@ fn main() -> io::Result<()> {
                     io::stdout().flush().unwrap();
                 }
                 Key::Char(c) => {
+                    shell.last_key_was_tab = false;
                     // Convert character position to byte position
                     //
                     let byte_pos = shell
@@ -466,6 +480,7 @@ fn main() -> io::Result<()> {
                     shell.redraw_line(&mut stdout)?;
                 }
                 Key::Backspace => {
+                    shell.last_key_was_tab = false;
                     if shell.cursor_pos > 0 {
                         shell.cursor_pos -= 1;
 
@@ -482,13 +497,16 @@ fn main() -> io::Result<()> {
                     }
                 }
                 Key::Ctrl('c') => {
+                    shell.last_key_was_tab = false;
                     // Exit on Ctrl+C
                     write!(stdout, "\r\n").unwrap();
                     stdout.flush().unwrap();
                     drop(stdout); // Exit raw mode
                     std::process::exit(0);
                 }
-                _ => {}
+                _ => {
+                    shell.last_key_was_tab = false;
+                }
             }
         }
     }

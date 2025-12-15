@@ -128,12 +128,8 @@ pub fn execute_single_command(input: &str, stdout: &mut impl Write) -> io::Resul
     handle_output(output, io_stream, stdout)?;
     Ok(())
 }
-
 pub fn execute_pipeline(input: &str, stdout: &mut impl Write) -> io::Result<()> {
-    let commands: Vec<String> = input
-        .split("|")
-        .map(|s| s.trim().replace("\n", "\r\n"))
-        .collect();
+    let commands: Vec<&str> = input.split('|').map(|s| s.trim()).collect();
 
     let mut previous_stdout: Option<std::process::Stdio> = None;
     let mut processes = vec![];
@@ -143,29 +139,59 @@ pub fn execute_pipeline(input: &str, stdout: &mut impl Write) -> io::Result<()> 
         if parts.is_empty() {
             continue;
         }
+
         let command = &parts[0];
         let args = &parts[1..];
-
-        if matches!(command.as_str(), "cd" | "exit" | "pwd" | "type" | "echo") {
-            writeln!(stdout, "Error: builtins in pipes not supported\r")?;
-            return Ok(());
-        }
 
         let mut cmd = std::process::Command::new(command);
         cmd.args(args);
 
+        // Connect stdin from previous command
         if let Some(prev) = previous_stdout.take() {
             cmd.stdin(prev);
         }
 
-        if i < commands.len() - 1 {
+        // Only pipe stdout if NOT the last command
+        let is_last = i == commands.len() - 1;
+        if !is_last {
             cmd.stdout(std::process::Stdio::piped());
+        } else {
+            // Last command - capture output
+            cmd.stdout(std::process::Stdio::piped());
+            cmd.stderr(std::process::Stdio::piped());
         }
 
         match cmd.spawn() {
             Ok(mut child) => {
-                previous_stdout = child.stdout.take().map(std::process::Stdio::from);
-                processes.push(child);
+                if !is_last {
+                    // Take stdout for next command
+                    previous_stdout = child.stdout.take().map(std::process::Stdio::from);
+                    processes.push(child);
+                } else {
+                    // Last command - wait and capture output
+                    // First wait for all previous processes
+                    for process in &mut processes {
+                        let _ = process.wait();
+                    }
+
+                    // Now get output from last command
+                    let output = child.wait_with_output()?;
+                    let stdout_str = String::from_utf8_lossy(&output.stdout);
+                    let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+                    // Convert \n to \r\n for raw mode
+                    if !stdout_str.is_empty() {
+                        let converted = stdout_str.replace('\n', "\r\n");
+                        write!(stdout, "{}", converted)?;
+                    }
+
+                    if !stderr_str.is_empty() {
+                        let converted_err = stderr_str.replace('\n', "\r\n");
+                        write!(stdout, "{}", converted_err)?;
+                    }
+
+                    stdout.flush()?;
+                }
             }
             Err(_) => {
                 writeln!(stdout, "{}: command not found\r", command)?;
@@ -174,12 +200,8 @@ pub fn execute_pipeline(input: &str, stdout: &mut impl Write) -> io::Result<()> 
         }
     }
 
-    for mut process in processes {
-        let _ = process.wait();
-    }
     Ok(())
 }
-
 fn handle_output(
     output: Result<String, ErrorKind>,
     io_stream: Output,

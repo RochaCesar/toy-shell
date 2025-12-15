@@ -130,7 +130,10 @@ pub fn execute_single_command(input: &str, stdout: &mut impl Write) -> io::Resul
 }
 
 pub fn execute_pipeline(input: &str, stdout: &mut impl Write) -> io::Result<()> {
-    let commands: Vec<&str> = input.split("|").map(|s| s.trim()).collect();
+    let commands: Vec<&str> = input
+        .split("|")
+        .map(|s| s.trim().replace("\n", "\r\n"))
+        .collect();
 
     let mut previous_stdout: Option<std::process::Stdio> = None;
     let mut processes = vec![];

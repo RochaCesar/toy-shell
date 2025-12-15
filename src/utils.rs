@@ -130,7 +130,7 @@ pub fn execute_single_command(input: &str, stdout: &mut impl Write) -> io::Resul
 }
 
 pub fn execute_pipeline(input: &str, stdout: &mut impl Write) -> io::Result<()> {
-    let commands: Vec<&str> = input
+    let commands: Vec<String> = input
         .split("|")
         .map(|s| s.trim().replace("\n", "\r\n"))
         .collect();

@@ -1,5 +1,7 @@
 pub mod builtins;
 pub mod shell;
+pub mod utils;
+use crate::utils::*;
 use shell::*;
 use std::fs::OpenOptions;
 #[allow(unused_imports)]
@@ -9,6 +11,7 @@ use std::path::Path;
 use std::process;
 use termion::event::Event;
 use termion::event::Key;
+use utils::*;
 // , Key, MouseEvent};
 //
 // use termion::event::Key;
@@ -18,16 +21,6 @@ use termion::raw::IntoRawMode;
 
 use std::io::prelude::*;
 
-struct PartialSuccess {
-    success_data: String,
-    error_info: String,
-}
-
-enum ErrorKind {
-    PartialSuccess(PartialSuccess),
-    CompleteFailure(String),
-}
-
 enum Output {
     AppendStdErr(Vec<String>),
     AppendStdOut(Vec<String>),
@@ -36,80 +29,7 @@ enum Output {
     StdOut,
 }
 
-fn tokenize(input: &str) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut current = String::new();
-    let mut quote_char = None;
-    let mut chars = input.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        match (c, quote_char) {
-            // Backslash outside quotes
-            ('\\', None) => {
-                if let Some(next_char) = chars.next() {
-                    current.push(next_char);
-                }
-            }
-            // Backslash inside double quotes
-            ('\\', Some('"')) => {
-                if let Some(next_char) = chars.next() {
-                    match next_char {
-                        '\\' | '$' | '"' | '\n' => current.push(next_char),
-                        _ => {
-                            current.push('\\');
-                            current.push(next_char);
-                        }
-                    }
-                }
-            }
-            // Quote handling
-            ('\'' | '"', None) => quote_char = Some(c),
-            ('"', Some('"')) | ('\'', Some('\'')) => quote_char = None,
-            // Space handling
-            (' ', None) => {
-                if !current.is_empty() {
-                    result.push(current.clone());
-                    current.clear();
-                }
-            }
-            // All other characters
-            (c, _) => current.push(c),
-        }
-    }
-
-    if !current.is_empty() {
-        result.push(current);
-    }
-
-    result
-}
-
-fn process_partial_results(results: String, error_results: String) -> Result<String, ErrorKind> {
-    match (results.is_empty(), error_results.is_empty()) {
-        (false, false) => Err(ErrorKind::PartialSuccess(PartialSuccess {
-            success_data: results,
-            error_info: error_results,
-        })),
-        (true, _) => Err(ErrorKind::CompleteFailure(error_results)),
-        (false, true) => Ok(results),
-    }
-}
-
-fn append_to_file(path: &Path, content: &str) -> std::io::Result<()> {
-    let mut file = OpenOptions::new()
-        .create(true) // Create the file if it doesn't exist
-        .append(true) // Open in append mode
-        .open(path)?;
-
-    if !content.is_empty() {
-        writeln!(file, "{}", content)?;
-    }
-
-    Ok(())
-}
-
 fn main() -> io::Result<()> {
-    let home_env = std::env::var("HOME").unwrap();
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let mut shell = Shell::new();
     loop {
@@ -157,294 +77,25 @@ fn main() -> io::Result<()> {
                     shell.last_key_was_tab = false;
                     write!(stdout, "\r\n")?;
                     io::stdout().flush()?;
-                    let mut parts: Vec<String> = tokenize(&shell.input);
 
-                    let io_stream =
-                        if let Some(redirect_index) = parts.iter().position(|x| x == "2>>") {
-                            let vec2 = parts.split_off(redirect_index);
-                            Output::AppendStdErr(vec2)
-                        } else if let Some(redirect_index) = parts.iter().position(|x| x == "2>") {
-                            let vec2 = parts.split_off(redirect_index);
-                            Output::RedirectStdErr(vec2)
-                        } else if let Some(redirect_index) =
-                            parts.iter().position(|x| x == ">>" || x == "1>>")
-                        {
-                            let vec2 = parts.split_off(redirect_index);
-                            Output::AppendStdOut(vec2)
-                        } else if let Some(redirect_index) =
-                            parts.iter().position(|x| x == ">" || x == "1>")
-                        {
-                            let vec2 = parts.split_off(redirect_index);
-                            Output::RedirectStdOut(vec2)
-                        } else {
-                            Output::StdOut
-                        };
+                    let input = shell.input.trim();
 
-                    let mut args = parts.iter_mut();
-                    let command = args.next().unwrap();
-
-                    let output: Result<String, ErrorKind> = match command.as_str() {
-                        "echo" => Ok(args.as_slice().join(" ")),
-                        "cat" => {
-                            use std::fs::File;
-                            use std::path::Path;
-
-                            let mut result = vec![];
-                            let mut error_result = vec![];
-                            for file_name in args {
-                                let path = Path::new(&file_name);
-                                let display = path.display();
-
-                                if let Ok(mut file) = File::open(&path) {
-                                    let mut s = String::new();
-
-                                    match file.read_to_string(&mut s) {
-                                        Err(why) => panic!("couldn't read {}: {}", display, why),
-                                        Ok(_) => result.push(s),
-                                    }
-                                } else {
-                                    error_result.push(format!(
-                                        "cat: {}: No such file or directory",
-                                        file_name
-                                    ));
-                                }
-                            }
-                            process_partial_results(result.concat(), error_result.concat())
-                        }
-                        "cd" => {
-                            let next = args.next();
-                            let path = next.unwrap();
-
-                            if path == "" || path == " " || path == "~" {
-                                // Go home on empty path
-                                let target = Path::new(&home_env);
-                                match std::env::set_current_dir(&target) {
-                                    Err(_) => Err(ErrorKind::CompleteFailure(format!(
-                                        "cd: {}: No such file or directory",
-                                        target.display()
-                                    ))),
-                                    Ok(_) => Ok(String::new()),
-                                }
-                            } else if &path[0..1] == "/" {
-                                // Handle absolute paths
-                                let target = Path::new(&path);
-
-                                match std::env::set_current_dir(&target) {
-                                    Err(_) => Err(ErrorKind::CompleteFailure(format!(
-                                        "cd: {}: No such file or directory",
-                                        target.display()
-                                    ))),
-                                    _ => Ok(String::new()),
-                                }
-                            } else {
-                                let get_current_directory =
-                                    std::env::current_dir().expect("Invalid Directory");
-                                let current_directory = get_current_directory
-                                    .to_str()
-                                    .expect("Error converting to string");
-                                let target_directory = current_directory
-                                    .chars()
-                                    .chain(std::iter::once('/'))
-                                    .chain(path.chars())
-                                    .collect::<String>();
-                                let mut destination = vec![];
-                                for directory in target_directory.split("/") {
-                                    match directory {
-                                        "." => {}
-                                        ".." => {
-                                            destination.pop().unwrap();
-                                        }
-                                        _ => {
-                                            destination.push(directory);
-                                        }
-                                    }
-                                }
-                                let final_destination = destination.join("/");
-
-                                let target = Path::new(&final_destination);
-
-                                match std::env::set_current_dir(&target) {
-                                    Err(_) => Err(ErrorKind::CompleteFailure(format!(
-                                        "cd: {}: No such file or directory",
-                                        target.display()
-                                    ))),
-                                    _ => Ok(String::new()),
-                                }
-                            }
-                        }
-                        "pwd" => {
-                            // println!(
-                            Ok(format!(
-                                "{}",
-                                std::env::current_dir()
-                                    .expect("Invalid Directory")
-                                    .display()
-                            ))
-                        }
-                        "exit" => {
-                            if let Some(code) = args.next() {
-                                drop(stdout); // Exit raw mode
-                                io::stdout().flush()?;
-                                process::exit(code.parse::<i32>().expect("Not a number"));
-                            } else {
-                                drop(stdout); // Exit raw mode
-                                io::stdout().flush()?;
-                                process::exit(0);
-                            }
-                        }
-                        "type" => {
-                            if let Some(argument) = args.next() {
-                                if argument == "cd"
-                                    || argument == "echo"
-                                    || argument == "exit"
-                                    || argument == "type"
-                                    || argument == "pwd"
-                                // || argument == "cat"
-                                {
-                                    Ok(format!("{argument} is a shell builtin"))
-                                } else if let Some(found) = std::env::var("PATH")
-                                    .unwrap_or_default()
-                                    .split(":")
-                                    .find(|path| {
-                                        let file_path = format!("{path}/{argument}");
-                                        if let Ok(metadata) = std::fs::metadata(&file_path) {
-                                            #[cfg(unix)]
-                                            {
-                                                use std::os::unix::fs::PermissionsExt;
-                                                // Check if executable bit is set (0o111 = any execute permission)
-                                                metadata.permissions().mode() & 0o111 != 0
-                                            }
-                                        } else {
-                                            false
-                                        }
-                                    })
-                                {
-                                    Ok(format!("{argument} is {found}/{argument}"))
-                                } else {
-                                    Err(ErrorKind::CompleteFailure(format!(
-                                        "{argument}: not found"
-                                    )))
-                                }
-                            } else {
-                                // TODO
-                                Ok(String::new())
-                            }
-                        }
-                        _ => {
-                            if let Ok(child) = std::process::Command::new(&command)
-                                .args(args)
-                                .stdout(std::process::Stdio::piped())
-                                .output()
-                            {
-                                let stdout = String::from_utf8_lossy(&child.stdout).to_string();
-                                let stderr = String::from_utf8_lossy(&child.stderr).to_string();
-                                process_partial_results(stdout, stderr)
-                            } else {
-                                Err(ErrorKind::CompleteFailure(format!(
-                                    "{}: command not found",
-                                    &command
-                                )))
-                            }
-                        }
-                    };
-
-                    match io_stream {
-                        Output::AppendStdErr(vec2) => {
-                            let filename = vec2.iter().skip(1).next().unwrap();
-                            let path = Path::new(filename);
-
-                            match output {
-                                Ok(correct_output) => {
-                                    append_to_file(path, "").expect("Error happened");
-                                    println!("{}", correct_output.as_str().trim());
-                                }
-                                Err(ErrorKind::CompleteFailure(error_message)) => {
-                                    append_to_file(path, error_message.trim())
-                                        .expect("Error happened");
-                                    // println!("{}", error_message.trim());
-                                }
-                                Err(ErrorKind::PartialSuccess(partial_success)) => {
-                                    append_to_file(path, &partial_success.error_info.trim())
-                                        .expect("Error happened");
-                                    println!("{}", partial_success.success_data.trim());
-                                }
-                            }
-                        }
-                        Output::AppendStdOut(vec2) => {
-                            let filename = vec2.iter().skip(1).next().unwrap();
-                            let path = Path::new(filename);
-
-                            match output {
-                                Ok(correct_output) => {
-                                    append_to_file(path, correct_output.as_str().trim())
-                                        .expect("Error happened");
-                                }
-                                Err(ErrorKind::CompleteFailure(error_message)) => {
-                                    if let Ok(_) = append_to_file(path, "") {}
-                                    println!("{}", error_message.trim());
-                                }
-                                Err(ErrorKind::PartialSuccess(partial_success)) => {
-                                    append_to_file(path, &partial_success.success_data)
-                                        .expect("Error happened");
-                                    println!("{}", partial_success.error_info.trim());
-                                }
-                            }
-                        }
-                        Output::RedirectStdErr(vec2) => {
-                            let filename = vec2.iter().skip(1).next().unwrap();
-
-                            match output {
-                                Ok(correct_output) => {
-                                    if !correct_output.is_empty() {
-                                        println!("{}", correct_output.trim());
-                                    }
-                                    std::fs::write(filename, "").expect("failed");
-                                }
-                                Err(ErrorKind::CompleteFailure(error_message)) => {
-                                    std::fs::write(filename, error_message + "\n").expect("failed");
-                                }
-                                Err(ErrorKind::PartialSuccess(partial_success)) => {
-                                    std::fs::write(filename, partial_success.error_info + "\n")
-                                        .expect("failed");
-                                    println!("{}", partial_success.success_data.trim());
-                                }
-                            }
-                        }
-                        Output::RedirectStdOut(vec2) => {
-                            let filename = vec2.iter().skip(1).next().unwrap();
-
-                            match output {
-                                Ok(correct_output) => {
-                                    std::fs::write(filename, correct_output + "\n").expect("failed")
-                                }
-                                Err(ErrorKind::CompleteFailure(error_message)) => {
-                                    println!("{}", error_message.trim())
-                                }
-                                Err(ErrorKind::PartialSuccess(partial_success)) => {
-                                    std::fs::write(filename, partial_success.success_data + "\n")
-                                        .expect("failed");
-                                    println!("{}", partial_success.error_info);
-                                }
-                            }
-                        }
-                        Output::StdOut => match output {
-                            Ok(correct_output) => {
-                                if !correct_output.is_empty() {
-                                    let output = correct_output.replace("\n", "\r\n");
-                                    write!(stdout, "{}\r\n", output.trim())?;
-                                    stdout.flush()?;
-                                }
-                            }
-                            Err(ErrorKind::CompleteFailure(error_message)) => {
-                                eprintln!("{}", error_message.trim())
-                            }
-                            Err(ErrorKind::PartialSuccess(partial_success)) => {
-                                println!("{}", partial_success.success_data.trim());
-                                eprintln!("{}", partial_success.error_info.trim());
-                            }
-                        },
+                    // Check for exit first
+                    if input.starts_with("exit") {
+                        let code = input
+                            .split_whitespace()
+                            .nth(1)
+                            .and_then(|s| s.parse::<i32>().ok())
+                            .unwrap_or(0);
+                        drop(stdout);
+                        io::stdout().flush()?;
+                        process::exit(code);
                     }
-
+                    if shell.input.contains("|") {
+                        execute_pipeline(&shell.input, &mut stdout)?;
+                    } else {
+                        execute_single_command(&shell.input, &mut stdout)?;
+                    }
                     // Reset for next command
                     shell.input.clear();
                     shell.cursor_pos = 0;

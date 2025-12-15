@@ -100,6 +100,7 @@ impl Shell {
 
         first.chars().take(prefix_len).collect()
     }
+
     pub fn redraw_line<W: Write>(&self, stdout: &mut W) -> io::Result<()> {
         let char_count = self.input.chars().count();
         let move_back = char_count - self.cursor_pos;

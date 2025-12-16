@@ -129,79 +129,94 @@ pub fn execute_single_command(input: &str, stdout: &mut impl Write) -> io::Resul
     Ok(())
 }
 pub fn execute_pipeline(input: &str, stdout: &mut impl Write) -> io::Result<()> {
-    let commands: Vec<&str> = input.split('|').map(|s| s.trim()).collect();
+    let commands: Vec<Vec<String>> = input
+        .split('|')
+        .map(|cmd| tokenize(cmd.trim()))
+        .filter(|parts| !parts.is_empty())
+        .collect();
 
-    let mut previous_stdout: Option<std::process::Stdio> = None;
-    let mut processes = vec![];
+    if commands.is_empty() {
+        return Ok(());
+    }
 
-    for (i, cmd) in commands.iter().enumerate() {
-        let parts: Vec<String> = tokenize(cmd);
-        if parts.is_empty() {
-            continue;
-        }
+    // Single command - no pipe
+    if commands.len() == 1 {
+        return execute_single_command(input, stdout);
+    }
 
-        let command = &parts[0];
+    // Multiple commands - set up pipeline
+    let mut children = vec![];
+    let mut prev_stdout = None;
+
+    for (i, parts) in commands.iter().enumerate() {
+        let cmd = &parts[0];
         let args = &parts[1..];
 
-        let mut cmd = std::process::Command::new(command);
-        cmd.args(args);
+        let mut command = std::process::Command::new(cmd);
+        command.args(args);
 
-        // Connect stdin from previous command
-        if let Some(prev) = previous_stdout.take() {
-            cmd.stdin(prev);
+        // Hook up stdin from previous command
+        if let Some(prev) = prev_stdout.take() {
+            // ← Use take() here
+            command.stdin(prev);
         }
 
-        // Only pipe stdout if NOT the last command
+        // Set up stdout
         let is_last = i == commands.len() - 1;
-        if !is_last {
-            cmd.stdout(std::process::Stdio::piped());
+        if is_last {
+            // Last command: capture both stdout and stderr
+            command.stdout(std::process::Stdio::piped());
+            command.stderr(std::process::Stdio::piped());
         } else {
-            // Last command - capture output
-            cmd.stdout(std::process::Stdio::piped());
-            cmd.stderr(std::process::Stdio::piped());
+            // Middle command: pipe stdout to next
+            command.stdout(std::process::Stdio::piped());
         }
 
-        match cmd.spawn() {
+        // Spawn the process
+        match command.spawn() {
             Ok(mut child) => {
+                // Only take stdout if NOT the last command
                 if !is_last {
-                    // Take stdout for next command
-                    previous_stdout = child.stdout.take().map(std::process::Stdio::from);
-                    processes.push(child);
-                } else {
-                    // Last command - wait and capture output
-                    // First wait for all previous processes
-                    for process in &mut processes {
-                        let _ = process.wait();
-                    }
-
-                    // Now get output from last command
-                    let output = child.wait_with_output()?;
-                    let stdout_str = String::from_utf8_lossy(&output.stdout);
-                    let stderr_str = String::from_utf8_lossy(&output.stderr);
-
-                    // Convert \n to \r\n for raw mode
-                    if !stdout_str.is_empty() {
-                        let converted = stdout_str.replace('\n', "\r\n");
-                        write!(stdout, "{}", converted)?;
-                    }
-
-                    if !stderr_str.is_empty() {
-                        let converted_err = stderr_str.replace('\n', "\r\n");
-                        write!(stdout, "{}", converted_err)?;
-                    }
-
-                    stdout.flush()?;
+                    prev_stdout = child.stdout.take().map(std::process::Stdio::from);
                 }
+                children.push(child);
             }
             Err(_) => {
-                writeln!(stdout, "{}: command not found\r", command)?;
+                write!(stdout, "{}: command not found\r\n", cmd)?;
+                for mut child in children {
+                    let _ = child.kill();
+                }
                 return Ok(());
             }
         }
     }
 
+    // Wait for last process first
+    if let Some(last_child) = children.pop() {
+        let output = last_child.wait_with_output()?;
+
+        // Wait for remaining processes
+        for mut child in children {
+            let _ = child.wait();
+        }
+
+        // Write output with \n -> \r\n conversion
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        if !stdout_str.is_empty() {
+            write!(stdout, "{}", stdout_str.replace('\n', "\r\n"))?;
+        }
+
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        if !stderr_str.is_empty() {
+            write!(stdout, "{}", stderr_str.replace('\n', "\r\n"))?;
+        }
+
+        stdout.flush()?;
+    }
+
     Ok(())
 }
+
 fn handle_output(
     output: Result<String, ErrorKind>,
     io_stream: Output,

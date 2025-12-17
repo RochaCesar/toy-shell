@@ -92,9 +92,9 @@ fn main() -> io::Result<()> {
                         process::exit(code);
                     }
                     if shell.input.contains("|") {
-                        execute_pipeline(&shell.input, &mut stdout)?;
+                        execute_pipeline_interruptible(&shell.input, &mut stdout)?;
                     } else {
-                        execute_single_command(&shell.input, &mut stdout)?;
+                        execute_single_interruptible(&shell.input, &mut stdout)?;
                     }
                     // Reset for next command
                     shell.input.clear();

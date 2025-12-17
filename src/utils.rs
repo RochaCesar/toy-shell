@@ -1,8 +1,8 @@
 use crate::builtins::*;
 use std::fs::OpenOptions;
-use std::io::{self, Write};
+use std::io::{self};
 use std::path::Path;
-use std::process::Command;
+use std::thread;
 pub struct PartialSuccess {
     pub success_data: String,
     pub error_info: String,
@@ -128,91 +128,129 @@ pub fn execute_single_command(input: &str, stdout: &mut impl Write) -> io::Resul
     handle_output(output, io_stream, stdout)?;
     Ok(())
 }
-pub fn execute_pipeline(input: &str, stdout: &mut impl Write) -> io::Result<()> {
-    let commands: Vec<Vec<String>> = input
-        .split('|')
-        .map(|cmd| tokenize(cmd.trim()))
-        .filter(|parts| !parts.is_empty())
-        .collect();
+use std::io::Read;
 
-    if commands.is_empty() {
+pub fn execute_pipeline(input: &str, stdout: &mut impl Write) -> io::Result<()> {
+    let parts: Vec<&str> = input.split('|').map(|s| s.trim()).collect();
+
+    if parts.len() != 2 {
+        write!(stdout, "Error: expected exactly 2 commands\r\n")?;
         return Ok(());
     }
 
-    // Single command - no pipe
-    if commands.len() == 1 {
-        return execute_single_command(input, stdout);
+    // Parse commands
+    let cmd1_parts = tokenize(parts[0]);
+    let cmd1_name = &cmd1_parts[0];
+    let cmd1_args = &cmd1_parts[1..];
+
+    let cmd2_parts = tokenize(parts[1]);
+    let cmd2_name = &cmd2_parts[0];
+    let cmd2_args = &cmd2_parts[1..];
+
+    // Spawn first command
+    let mut child1 = std::process::Command::new(cmd1_name)
+        .args(cmd1_args)
+        .stdout(std::process::Stdio::piped())
+        .spawn()?;
+
+    let child1_stdout = child1.stdout.take().unwrap();
+
+    // Spawn second command
+    let mut child2 = std::process::Command::new(cmd2_name)
+        .args(cmd2_args)
+        .stdin(child1_stdout)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    // Read stdout in a thread (non-blocking)
+    let mut child2_stdout = child2.stdout.take().unwrap();
+    let stdout_thread = thread::spawn(move || {
+        let mut output = String::new();
+        child2_stdout.read_to_string(&mut output).ok();
+        output
+    });
+
+    // Read stderr in a thread (non-blocking)
+    let mut child2_stderr = child2.stderr.take().unwrap();
+    let stderr_thread = thread::spawn(move || {
+        let mut output = String::new();
+        child2_stderr.read_to_string(&mut output).ok();
+        output
+    });
+
+    // Wait for child2 to exit (or timeout)
+    let _ = child2.wait();
+
+    // Kill child1 if still running
+    let _ = child1.kill();
+    let _ = child1.wait();
+
+    // Get output from threads
+    let stdout_str = stdout_thread.join().unwrap();
+    let stderr_str = stderr_thread.join().unwrap();
+
+    // Print with conversion
+    if !stdout_str.is_empty() {
+        write!(stdout, "{}", stdout_str.replace('\n', "\r\n"))?;
+    }
+    if !stderr_str.is_empty() {
+        write!(stdout, "{}", stderr_str.replace('\n', "\r\n"))?;
     }
 
-    // Multiple commands - set up pipeline
-    let mut children = vec![];
-    let mut prev_stdout = None;
+    stdout.flush()?;
+    Ok(())
+}
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
-    for (i, parts) in commands.iter().enumerate() {
-        let cmd = &parts[0];
-        let args = &parts[1..];
+fn execute_two_command_pipe(input: &str, stdout: &mut impl Write) -> io::Result<()> {
+    let parts: Vec<&str> = input.split('|').map(|s| s.trim()).collect();
 
-        let mut command = std::process::Command::new(cmd);
-        command.args(args);
+    if parts.len() != 2 {
+        write!(stdout, "Error: expected 2 commands\r\n")?;
+        return Ok(());
+    }
 
-        // Hook up stdin from previous command
-        if let Some(prev) = prev_stdout.take() {
-            // ← Use take() here
-            command.stdin(prev);
-        }
+    // Parse both commands
+    let cmd1_parts = tokenize(parts[0]);
+    let cmd2_parts = tokenize(parts[1]);
 
-        // Set up stdout
-        let is_last = i == commands.len() - 1;
-        if is_last {
-            // Last command: capture both stdout and stderr
-            command.stdout(std::process::Stdio::piped());
-            command.stderr(std::process::Stdio::piped());
-        } else {
-            // Middle command: pipe stdout to next
-            command.stdout(std::process::Stdio::piped());
-        }
+    // Spawn first command: tail -f
+    let mut child1 = Command::new(&cmd1_parts[0])
+        .args(&cmd1_parts[1..])
+        .stdout(Stdio::piped())
+        .spawn()?;
 
-        // Spawn the process
-        match command.spawn() {
-            Ok(mut child) => {
-                // Only take stdout if NOT the last command
-                if !is_last {
-                    prev_stdout = child.stdout.take().map(std::process::Stdio::from);
-                }
-                children.push(child);
-            }
-            Err(_) => {
-                write!(stdout, "{}: command not found\r\n", cmd)?;
-                for mut child in children {
-                    let _ = child.kill();
-                }
-                return Ok(());
-            }
+    // Take its stdout
+    let child1_stdout = child1.stdout.take().unwrap();
+
+    // Spawn second command: head -n 5
+    let mut child2 = Command::new(&cmd2_parts[0])
+        .args(&cmd2_parts[1..])
+        .stdin(child1_stdout)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    // Read output line-by-line as it arrives
+    let child2_stdout = child2.stdout.take().unwrap();
+    let reader = BufReader::new(child2_stdout);
+
+    // Read and print each line immediately
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            write!(stdout, "{}\r\n", line)?;
+            stdout.flush()?;
         }
     }
 
-    // Wait for last process first
-    if let Some(last_child) = children.pop() {
-        let output = last_child.wait_with_output()?;
-
-        // Wait for remaining processes
-        for mut child in children {
-            let _ = child.wait();
-        }
-
-        // Write output with \n -> \r\n conversion
-        let stdout_str = String::from_utf8_lossy(&output.stdout);
-        if !stdout_str.is_empty() {
-            write!(stdout, "{}", stdout_str.replace('\n', "\r\n"))?;
-        }
-
-        let stderr_str = String::from_utf8_lossy(&output.stderr);
-        if !stderr_str.is_empty() {
-            write!(stdout, "{}", stderr_str.replace('\n', "\r\n"))?;
-        }
-
-        stdout.flush()?;
-    }
+    // Clean up: kill both processes
+    let _ = child2.kill();
+    let _ = child1.kill();
+    let _ = child2.wait();
+    let _ = child1.wait();
 
     Ok(())
 }
@@ -323,6 +361,227 @@ pub fn append_to_file(path: &Path, content: &str) -> std::io::Result<()> {
 
     if !content.is_empty() {
         writeln!(file, "{}", content)?;
+    }
+
+    Ok(())
+}
+
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
+// Wrapper to run commands with Ctrl+C support
+pub fn execute_with_interrupt_support(input: &str, stdout: &mut impl Write) -> io::Result<()> {
+    if input.contains('|') {
+        execute_pipeline_interruptible(input, stdout)
+    } else {
+        execute_single_interruptible(input, stdout)
+    }
+}
+
+// Single command with Ctrl+C support
+pub fn execute_single_interruptible(input: &str, stdout: &mut impl Write) -> io::Result<()> {
+    let mut parts = tokenize(input);
+
+    let io_stream = if let Some(redirect_index) = parts.iter().position(|x| x == "2>>") {
+        let vec2 = parts.split_off(redirect_index);
+        Output::AppendStdErr(vec2)
+    } else if let Some(redirect_index) = parts.iter().position(|x| x == "2>") {
+        let vec2 = parts.split_off(redirect_index);
+        Output::RedirectStdErr(vec2)
+    } else if let Some(redirect_index) = parts.iter().position(|x| x == ">>" || x == "1>>") {
+        let vec2 = parts.split_off(redirect_index);
+        Output::AppendStdOut(vec2)
+    } else if let Some(redirect_index) = parts.iter().position(|x| x == ">" || x == "1>") {
+        let vec2 = parts.split_off(redirect_index);
+        Output::RedirectStdOut(vec2)
+    } else {
+        Output::StdOut
+    };
+
+    if parts.is_empty() {
+        return Ok(());
+    }
+
+    let cmd = &parts[0];
+    let args = &parts[1..];
+
+    // Handle builtins normally (they run in-process)
+    if matches!(cmd.as_str(), "cd" | "exit" | "pwd" | "type" | "echo") {
+        let output = Builtins.execute(cmd, args);
+        handle_output(output, io_stream, stdout)?;
+        return Ok(());
+    }
+
+    // Spawn external command in new process group
+    let mut command = Command::new(cmd);
+    command
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(unix)]
+    unsafe {
+        command.pre_exec(|| {
+            // Create new process group
+            libc::setpgid(0, 0);
+            Ok(())
+        });
+    }
+
+    let mut child = match command.spawn() {
+        Ok(c) => c,
+        Err(_) => {
+            write!(stdout, "{}: command not found\r\n", cmd)?;
+            return Ok(());
+        }
+    };
+
+    let pid = child.id() as i32;
+
+    // Read output in thread
+    let child_stdout = child.stdout.take().unwrap();
+    let child_stderr = child.stderr.take().unwrap();
+
+    let killed = Arc::new(AtomicBool::new(false));
+    let killed_clone = killed.clone();
+
+    // Output thread
+    let output_thread = thread::spawn(move || {
+        let reader = BufReader::new(child_stdout);
+        let mut output = String::new();
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                output.push_str(&line);
+                output.push('\n');
+            }
+        }
+        output
+    });
+
+    let error_thread = thread::spawn(move || {
+        let reader = BufReader::new(child_stderr);
+        let mut output = String::new();
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                output.push_str(&line);
+                output.push('\n');
+            }
+        }
+        output
+    });
+
+    // Wait for process or Ctrl+C
+    loop {
+        // Check if process exited
+        match child.try_wait()? {
+            Some(_status) => break,
+            None => {
+                // Still running, sleep briefly
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
+
+    // Get output
+    let stdout_str = output_thread.join().unwrap();
+    let stderr_str = error_thread.join().unwrap();
+
+    if !stdout_str.is_empty() {
+        write!(stdout, "{}", stdout_str.replace('\n', "\r\n"))?;
+    }
+    if !stderr_str.is_empty() {
+        write!(stdout, "{}", stderr_str.replace('\n', "\r\n"))?;
+    }
+
+    stdout.flush()?;
+    Ok(())
+}
+
+// Pipeline with Ctrl+C support
+pub fn execute_pipeline_interruptible(input: &str, stdout: &mut impl Write) -> io::Result<()> {
+    let commands: Vec<Vec<String>> = input
+        .split('|')
+        .map(|cmd| tokenize(cmd.trim()))
+        .filter(|parts| !parts.is_empty())
+        .collect();
+
+    if commands.is_empty() {
+        return Ok(());
+    }
+
+    let mut children = vec![];
+    let mut prev_stdout = None;
+
+    for (i, parts) in commands.iter().enumerate() {
+        let cmd = &parts[0];
+        let args = &parts[1..];
+
+        let mut command = Command::new(cmd);
+        command.args(args);
+
+        #[cfg(unix)]
+        unsafe {
+            command.pre_exec(|| {
+                libc::setpgid(0, 0);
+                Ok(())
+            });
+        }
+
+        // Use .take() to move the value out
+        if let Some(prev) = prev_stdout.take() {
+            command.stdin(prev);
+        }
+
+        let is_last = i == commands.len() - 1;
+        if is_last {
+            command.stdout(Stdio::piped());
+            command.stderr(Stdio::piped());
+        } else {
+            command.stdout(Stdio::piped());
+        }
+
+        match command.spawn() {
+            Ok(mut child) => {
+                if !is_last {
+                    prev_stdout = child.stdout.take().map(Stdio::from);
+                }
+                children.push(child);
+            }
+            Err(_) => {
+                write!(stdout, "{}: command not found\r\n", cmd)?;
+                for mut c in children {
+                    let _ = c.kill();
+                }
+                return Ok(());
+            }
+        }
+    }
+
+    // Read output from last command
+    if let Some(mut last) = children.pop() {
+        let last_stdout = last.stdout.take().unwrap();
+        let reader = BufReader::new(last_stdout);
+
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                write!(stdout, "{}\r\n", line)?;
+                stdout.flush()?;
+            }
+        }
+
+        // Clean up
+        let _ = last.kill();
+        let _ = last.wait();
+
+        for mut child in children {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 
     Ok(())

@@ -12,6 +12,20 @@ impl Builtins {
     pub fn new() -> Self {
         Builtins
     }
+    pub fn execute(&self, cmd: &str, args: &[String]) -> Result<String, ErrorKind> {
+        match cmd {
+            "echo" => self.echo(args),
+            "pwd" => self.pwd(),
+            "cd" => self.cd(args.iter().next().map(|x| x.as_str()).unwrap_or("~")),
+            "type" => self._type(args.iter().map(|x| x.as_str()).next()),
+            "cat" => self.cat(args),
+            _ => Err(ErrorKind::CompleteFailure(format!(
+                "{}: command not found",
+                cmd
+            ))),
+        }
+    }
+
     pub fn echo(&self, args: &[String]) -> Result<String, ErrorKind> {
         Ok(args.join(" "))
     }

@@ -205,56 +205,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-fn execute_two_command_pipe(input: &str, stdout: &mut impl Write) -> io::Result<()> {
-    let parts: Vec<&str> = input.split('|').map(|s| s.trim()).collect();
-
-    if parts.len() != 2 {
-        write!(stdout, "Error: expected 2 commands\r\n")?;
-        return Ok(());
-    }
-
-    // Parse both commands
-    let cmd1_parts = tokenize(parts[0]);
-    let cmd2_parts = tokenize(parts[1]);
-
-    // Spawn first command: tail -f
-    let mut child1 = Command::new(&cmd1_parts[0])
-        .args(&cmd1_parts[1..])
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    // Take its stdout
-    let child1_stdout = child1.stdout.take().unwrap();
-
-    // Spawn second command: head -n 5
-    let mut child2 = Command::new(&cmd2_parts[0])
-        .args(&cmd2_parts[1..])
-        .stdin(child1_stdout)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    // Read output line-by-line as it arrives
-    let child2_stdout = child2.stdout.take().unwrap();
-    let reader = BufReader::new(child2_stdout);
-
-    // Read and print each line immediately
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            write!(stdout, "{}\r\n", line)?;
-            stdout.flush()?;
-        }
-    }
-
-    // Clean up: kill both processes
-    let _ = child2.kill();
-    let _ = child1.kill();
-    let _ = child2.wait();
-    let _ = child1.wait();
-
-    Ok(())
-}
-
 fn handle_output(
     output: Result<String, ErrorKind>,
     io_stream: Output,
@@ -491,13 +441,15 @@ pub fn execute_single_interruptible(input: &str, stdout: &mut impl Write) -> io:
     let stdout_str = output_thread.join().unwrap();
     let stderr_str = error_thread.join().unwrap();
 
-    if !stdout_str.is_empty() {
-        write!(stdout, "{}", stdout_str.replace('\n', "\r\n"))?;
-    }
-    if !stderr_str.is_empty() {
-        write!(stdout, "{}", stderr_str.replace('\n', "\r\n"))?;
-    }
+    // if !stdout_str.is_empty() {
+    //     write!(stdout, "{}", stdout_str.replace('\n', "\r\n"))?;
+    // }
+    // if !stderr_str.is_empty() {
+    //     write!(stdout, "{}", stderr_str.replace('\n', "\r\n"))?;
+    // }
 
+    let output = process_partial_results(stdout_str, stderr_str);
+    handle_output(output, io_stream, stdout)?;
     stdout.flush()?;
     Ok(())
 }

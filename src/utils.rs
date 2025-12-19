@@ -275,11 +275,15 @@ fn handle_output(
                     std::fs::write(filename, correct_output + "\n").expect("failed")
                 }
                 Err(ErrorKind::CompleteFailure(error_message)) => {
-                    println!("{}", error_message.trim())
+                    write!(stdout, "{}", error_message.trim().replace("\n", "\r\n"))?;
                 }
                 Err(ErrorKind::PartialSuccess(partial_success)) => {
                     std::fs::write(filename, partial_success.success_data + "\n").expect("failed");
-                    println!("{}", partial_success.error_info);
+                    write!(
+                        stdout,
+                        "{}",
+                        partial_success.error_info.replace("\n", "\r\n")
+                    )?;
                 }
             }
         }
@@ -440,13 +444,6 @@ pub fn execute_single_interruptible(input: &str, stdout: &mut impl Write) -> io:
     // Get output
     let stdout_str = output_thread.join().unwrap();
     let stderr_str = error_thread.join().unwrap();
-
-    // if !stdout_str.is_empty() {
-    //     write!(stdout, "{}", stdout_str.replace('\n', "\r\n"))?;
-    // }
-    // if !stderr_str.is_empty() {
-    //     write!(stdout, "{}", stderr_str.replace('\n', "\r\n"))?;
-    // }
 
     let output = process_partial_results(
         stdout_str.replace('\n', "\r\n"),

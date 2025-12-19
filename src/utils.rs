@@ -448,7 +448,10 @@ pub fn execute_single_interruptible(input: &str, stdout: &mut impl Write) -> io:
     //     write!(stdout, "{}", stderr_str.replace('\n', "\r\n"))?;
     // }
 
-    let output = process_partial_results(stdout_str, stderr_str);
+    let output = process_partial_results(
+        stdout_str.replace('\n', "\r\n"),
+        stderr_str.replace('\n', "\r\n"),
+    );
     handle_output(output, io_stream, stdout)?;
     stdout.flush()?;
     Ok(())

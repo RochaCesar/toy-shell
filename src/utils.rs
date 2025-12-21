@@ -236,7 +236,7 @@ fn handle_output(
 
             match output {
                 Ok(correct_output) => {
-                    append_to_file(path, correct_output.as_str().trim()).expect("Error happened");
+                    append_to_file(path, &correct_output)?;
                 }
                 Err(ErrorKind::CompleteFailure(error_message)) => {
                     if let Ok(_) = append_to_file(path, "") {}
@@ -271,9 +271,7 @@ fn handle_output(
             let filename = vec2.iter().skip(1).next().unwrap();
 
             match output {
-                Ok(correct_output) => {
-                    std::fs::write(filename, correct_output + "\n").expect("failed")
-                }
+                Ok(correct_output) => std::fs::write(filename, correct_output).expect("failed"),
                 Err(ErrorKind::CompleteFailure(error_message)) => {
                     write!(stdout, "{}", error_message.trim().replace("\n", "\r\n"))?;
                 }

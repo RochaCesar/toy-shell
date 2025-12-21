@@ -454,7 +454,7 @@ pub fn execute_single_interruptible(input: &str, stdout: &mut impl Write) -> io:
     Ok(())
 }
 
-// Pipeline with Ctrl+C support
+// Fix pipeline to let builtins ignore stdin and just output
 pub fn execute_pipeline_interruptible(input: &str, stdout: &mut impl Write) -> io::Result<()> {
     let commands: Vec<Vec<String>> = input
         .split('|')
@@ -466,67 +466,144 @@ pub fn execute_pipeline_interruptible(input: &str, stdout: &mut impl Write) -> i
         return Ok(());
     }
 
-    let mut children = vec![];
+    if commands.len() == 1 {
+        return execute_single_interruptible(input, stdout);
+    }
+
+    let builtins = Builtins;
+    let mut children: Vec<std::process::Child> = vec![];
     let mut prev_stdout = None;
 
     for (i, parts) in commands.iter().enumerate() {
         let cmd = &parts[0];
         let args = &parts[1..];
-
-        let mut command = Command::new(cmd);
-        command.args(args);
-
-        #[cfg(unix)]
-        unsafe {
-            command.pre_exec(|| {
-                libc::setpgid(0, 0);
-                Ok(())
-            });
-        }
-
-        // Use .take() to move the value out
-        if let Some(prev) = prev_stdout.take() {
-            command.stdin(prev);
-        }
-
         let is_last = i == commands.len() - 1;
-        if is_last {
-            command.stdout(Stdio::piped());
-            command.stderr(Stdio::piped());
-        } else {
-            command.stdout(Stdio::piped());
-        }
 
-        match command.spawn() {
-            Ok(mut child) => {
-                if !is_last {
-                    prev_stdout = child.stdout.take().map(Stdio::from);
+        // Check if it's a builtin
+        if matches!(
+            cmd.as_str(),
+            "cd" | "exit" | "pwd" | "type" | "echo" | "cat"
+        ) {
+            // Builtins ignore stdin and just execute normally
+            let builtin_output = match builtins.execute(cmd, args) {
+                Ok(output) => output,
+                Err(ErrorKind::CompleteFailure(err)) => {
+                    write!(stdout, "{}\r\n", err)?;
+                    for mut child in children {
+                        let _ = child.kill();
+                    }
+                    return Ok(());
                 }
-                children.push(child);
-            }
-            Err(_) => {
-                write!(stdout, "{}: command not found\r\n", cmd)?;
-                for mut c in children {
-                    let _ = c.kill();
+                Err(ErrorKind::PartialSuccess(partial)) => {
+                    write!(stdout, "{}\r\n", partial.error_info)?;
+                    partial.success_data
+                }
+            };
+
+            if is_last {
+                // Last command - output to terminal
+                if !builtin_output.is_empty() {
+                    write!(stdout, "{}\r\n", builtin_output.replace('\n', "\r\n"))?;
+                }
+                stdout.flush()?;
+
+                // Wait for any previous processes
+                for mut child in children {
+                    let _ = child.wait();
                 }
                 return Ok(());
+            } else {
+                // Builtin in middle of pipe - use echo to pass output to next command
+                let mut command = Command::new("sh");
+                command.arg("-c");
+                command.arg(format!(
+                    "echo -n '{}'",
+                    builtin_output.replace("'", "'\\''")
+                ));
+
+                #[cfg(unix)]
+                unsafe {
+                    command.pre_exec(|| {
+                        libc::setpgid(0, 0);
+                        Ok(())
+                    });
+                }
+
+                // Hook up stdin from previous (but builtin ignores it)
+                if let Some(prev) = prev_stdout.take() {
+                    command.stdin(prev);
+                } else {
+                    command.stdin(Stdio::null());
+                }
+
+                command.stdout(Stdio::piped());
+
+                match command.spawn() {
+                    Ok(mut child) => {
+                        prev_stdout = child.stdout.take().map(Stdio::from);
+                        children.push(child);
+                    }
+                    Err(_) => {
+                        write!(stdout, "Error: failed to pipe builtin output\r\n")?;
+                        return Ok(());
+                    }
+                }
+            }
+        } else {
+            // External command
+            let mut command = Command::new(cmd);
+            command.args(args);
+
+            #[cfg(unix)]
+            unsafe {
+                command.pre_exec(|| {
+                    libc::setpgid(0, 0);
+                    Ok(())
+                });
+            }
+
+            if let Some(prev) = prev_stdout.take() {
+                command.stdin(prev);
+            }
+
+            if is_last {
+                command.stdout(Stdio::piped());
+                command.stderr(Stdio::piped());
+            } else {
+                command.stdout(Stdio::piped());
+            }
+
+            match command.spawn() {
+                Ok(mut child) => {
+                    if !is_last {
+                        prev_stdout = child.stdout.take().map(Stdio::from);
+                    }
+                    children.push(child);
+                }
+                Err(_) => {
+                    write!(stdout, "{}: command not found\r\n", cmd)?;
+                    for mut c in children {
+                        let _ = c.kill();
+                    }
+                    return Ok(());
+                }
             }
         }
     }
 
     // Read output from last command
     if let Some(mut last) = children.pop() {
-        let last_stdout = last.stdout.take().unwrap();
-        let reader = BufReader::new(last_stdout);
+        if let Some(last_stdout) = last.stdout.take() {
+            let reader = BufReader::new(last_stdout);
 
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                write!(stdout, "{}\r\n", line)?;
-                stdout.flush()?;
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    write!(stdout, "{}\r\n", line)?;
+                    stdout.flush()?;
+                }
             }
         }
 
-        // Clean up
         let _ = last.kill();
         let _ = last.wait();
 

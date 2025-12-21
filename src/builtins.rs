@@ -125,6 +125,7 @@ impl Builtins {
                 || argument == "exit"
                 || argument == "type"
                 || argument == "pwd"
+                || argument == "history"
             // || argument == "cat"
             {
                 Ok(format!("{argument} is a shell builtin"))

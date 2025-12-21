@@ -27,7 +27,7 @@ impl Builtins {
     }
 
     pub fn echo(&self, args: &[String]) -> Result<String, ErrorKind> {
-        Ok(format!("{}\n", args.join(" ")))
+        Ok(format!("{}\r\n", args.join(" ")))
     }
     pub fn cat(&self, args: &[String]) -> Result<String, ErrorKind> {
         use std::fs::File;

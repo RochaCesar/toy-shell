@@ -236,7 +236,7 @@ fn handle_output(
 
             match output {
                 Ok(correct_output) => {
-                    append_to_file(path, &correct_output)?;
+                    append_to_file(path, correct_output.as_str().trim())?;
                 }
                 Err(ErrorKind::CompleteFailure(error_message)) => {
                     if let Ok(_) = append_to_file(path, "") {}

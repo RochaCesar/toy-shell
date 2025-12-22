@@ -32,7 +32,7 @@ impl Builtins {
             Some(arg) => arg.parse::<usize>().map_err(|_| {
                 ErrorKind::CompleteFailure(format!("history: {}: numeric argument required", arg))
             })?,
-            _ => usize::MAX,
+            _ => 1000,
         };
         if let Ok(lines) = read_lines(".history") {
             let mut deque = std::collections::VecDeque::with_capacity(n);

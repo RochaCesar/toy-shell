@@ -19,7 +19,7 @@ impl Builtins {
             "cd" => self.cd(args.iter().next().map(|x| x.as_str()).unwrap_or("~")),
             "type" => self._type(args.iter().map(|x| x.as_str()).next()),
             "cat" => self.cat(args),
-            "history" => self.history(),
+            "history" => self.history(args.iter().next().map(|x| x.as_str())),
             _ => Err(ErrorKind::CompleteFailure(format!(
                 "{}: command not found",
                 cmd
@@ -27,12 +27,24 @@ impl Builtins {
         }
     }
 
-    pub fn history(&self) -> Result<String, ErrorKind> {
+    pub fn history(&self, args: Option<&str>) -> Result<String, ErrorKind> {
+        let n = if let Some(arg) = args {
+            if let Ok(n) = arg.parse::<usize>() {
+                n
+            } else {
+                return Err(ErrorKind::CompleteFailure(
+                    "numeric argument required".to_string(),
+                ));
+            }
+        } else {
+            usize::MAX
+        };
         let mut result = vec![];
         if let Ok(lines) = read_lines(".history") {
             result = lines
                 .map_while(Result::ok)
                 .enumerate()
+                .take(n)
                 .map(|(i, line)| format!("{} {line}", i + 1))
                 .collect::<Vec<String>>();
         }

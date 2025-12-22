@@ -28,27 +28,24 @@ impl Builtins {
     }
 
     pub fn history(&self, args: Option<&str>) -> Result<String, ErrorKind> {
-        let n = if let Some(arg) = args {
-            if let Ok(n) = arg.parse::<usize>() {
-                n
-            } else {
-                return Err(ErrorKind::CompleteFailure(
-                    "numeric argument required".to_string(),
-                ));
-            }
-        } else {
-            usize::MAX
+        let n = match args {
+            Some(arg) => arg.parse::<usize>().map_err(|_| {
+                ErrorKind::CompleteFailure(format!("history: {}: numeric argument required", arg))
+            })?,
+            _ => usize::MAX,
         };
-        let mut result = vec![];
         if let Ok(lines) = read_lines(".history") {
-            result = lines
-                .map_while(Result::ok)
-                .enumerate()
-                .take(n)
-                .map(|(i, line)| format!("{} {line}", i + 1))
-                .collect::<Vec<String>>();
+            let mut deque = std::collections::VecDeque::with_capacity(n);
+            for (i, line) in lines.map_while(Result::ok).enumerate() {
+                deque.push_back(format!("{} {line}", i + 1));
+                if deque.len() > n {
+                    deque.pop_front();
+                }
+            }
+            let result: Vec<_> = deque.into_iter().collect();
+            return Ok(format!("{}\n", result.join("\n")));
         }
-        Ok(format!("{}\n", result.join("\n")))
+        Ok(String::new())
     }
 
     pub fn echo(&self, args: &[String]) -> Result<String, ErrorKind> {

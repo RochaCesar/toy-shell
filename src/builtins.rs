@@ -19,11 +19,24 @@ impl Builtins {
             "cd" => self.cd(args.iter().next().map(|x| x.as_str()).unwrap_or("~")),
             "type" => self._type(args.iter().map(|x| x.as_str()).next()),
             "cat" => self.cat(args),
+            "history" => self.history(),
             _ => Err(ErrorKind::CompleteFailure(format!(
                 "{}: command not found",
                 cmd
             ))),
         }
+    }
+
+    pub fn history(&self) -> Result<String, ErrorKind> {
+        let mut result = vec![];
+        if let Ok(lines) = read_lines(".history") {
+            result = lines
+                .map_while(Result::ok)
+                .enumerate()
+                .map(|(i, line)| format!("{} {line}", i + 1))
+                .collect::<Vec<String>>();
+        }
+        Ok(format!("{}\n", result.join("\n")))
     }
 
     pub fn echo(&self, args: &[String]) -> Result<String, ErrorKind> {

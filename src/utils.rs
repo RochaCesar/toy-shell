@@ -68,6 +68,17 @@ pub fn tokenize(input: &str) -> Vec<String> {
 
     result
 }
+use std::fs::File;
+// The output is wrapped in a Result to allow matching on errors.
+// Returns an Iterator to the Reader of the lines of the file.
+pub fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
+}
+
 pub fn process_partial_results(
     results: String,
     error_results: String,
@@ -81,126 +92,8 @@ pub fn process_partial_results(
         (false, true) => Ok(results),
     }
 }
-pub fn execute_single_command(input: &str, stdout: &mut impl Write) -> io::Result<()> {
-    let mut parts: Vec<String> = tokenize(input);
-    let io_stream = if let Some(redirect_index) = parts.iter().position(|x| x == "2>>") {
-        let vec2 = parts.split_off(redirect_index);
-        Output::AppendStdErr(vec2)
-    } else if let Some(redirect_index) = parts.iter().position(|x| x == "2>") {
-        let vec2 = parts.split_off(redirect_index);
-        Output::RedirectStdErr(vec2)
-    } else if let Some(redirect_index) = parts.iter().position(|x| x == ">>" || x == "1>>") {
-        let vec2 = parts.split_off(redirect_index);
-        Output::AppendStdOut(vec2)
-    } else if let Some(redirect_index) = parts.iter().position(|x| x == ">" || x == "1>") {
-        let vec2 = parts.split_off(redirect_index);
-        Output::RedirectStdOut(vec2)
-    } else {
-        Output::StdOut
-    };
-
-    let mut args = parts.iter_mut();
-    let command = args.next().unwrap();
-
-    let output: Result<String, ErrorKind> = match command.as_str() {
-        "echo" => Builtins.echo(args.as_slice()),
-        "cat" => Builtins.cat(args.as_slice()),
-        "cd" => Builtins.cd(args.next().unwrap()),
-        "pwd" => Builtins.pwd(),
-        "type" => Builtins._type(args.next().map(|x| x.as_str())),
-        _ => {
-            if let Ok(child) = std::process::Command::new(&command)
-                .args(args)
-                .stdout(std::process::Stdio::piped())
-                .output()
-            {
-                let stdout = String::from_utf8_lossy(&child.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&child.stderr).to_string();
-                process_partial_results(stdout, stderr)
-            } else {
-                Err(ErrorKind::CompleteFailure(format!(
-                    "{}: command not found",
-                    &command
-                )))
-            }
-        }
-    };
-    handle_output(output, io_stream, stdout)?;
-    Ok(())
-}
 use std::io::Read;
 
-pub fn execute_pipeline(input: &str, stdout: &mut impl Write) -> io::Result<()> {
-    let parts: Vec<&str> = input.split('|').map(|s| s.trim()).collect();
-
-    if parts.len() != 2 {
-        write!(stdout, "Error: expected exactly 2 commands\r\n")?;
-        return Ok(());
-    }
-
-    // Parse commands
-    let cmd1_parts = tokenize(parts[0]);
-    let cmd1_name = &cmd1_parts[0];
-    let cmd1_args = &cmd1_parts[1..];
-
-    let cmd2_parts = tokenize(parts[1]);
-    let cmd2_name = &cmd2_parts[0];
-    let cmd2_args = &cmd2_parts[1..];
-
-    // Spawn first command
-    let mut child1 = std::process::Command::new(cmd1_name)
-        .args(cmd1_args)
-        .stdout(std::process::Stdio::piped())
-        .spawn()?;
-
-    let child1_stdout = child1.stdout.take().unwrap();
-
-    // Spawn second command
-    let mut child2 = std::process::Command::new(cmd2_name)
-        .args(cmd2_args)
-        .stdin(child1_stdout)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()?;
-
-    // Read stdout in a thread (non-blocking)
-    let mut child2_stdout = child2.stdout.take().unwrap();
-    let stdout_thread = thread::spawn(move || {
-        let mut output = String::new();
-        child2_stdout.read_to_string(&mut output).ok();
-        output
-    });
-
-    // Read stderr in a thread (non-blocking)
-    let mut child2_stderr = child2.stderr.take().unwrap();
-    let stderr_thread = thread::spawn(move || {
-        let mut output = String::new();
-        child2_stderr.read_to_string(&mut output).ok();
-        output
-    });
-
-    // Wait for child2 to exit (or timeout)
-    let _ = child2.wait();
-
-    // Kill child1 if still running
-    let _ = child1.kill();
-    let _ = child1.wait();
-
-    // Get output from threads
-    let stdout_str = stdout_thread.join().unwrap();
-    let stderr_str = stderr_thread.join().unwrap();
-
-    // Print with conversion
-    if !stdout_str.is_empty() {
-        write!(stdout, "{}", stdout_str.replace('\n', "\r\n"))?;
-    }
-    if !stderr_str.is_empty() {
-        write!(stdout, "{}", stderr_str.replace('\n', "\r\n"))?;
-    }
-
-    stdout.flush()?;
-    Ok(())
-}
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -359,11 +252,15 @@ pub fn execute_single_interruptible(input: &str, stdout: &mut impl Write) -> io:
         return Ok(());
     }
 
+    append_to_file(Path::new(".history"), &input)?;
     let cmd = &parts[0];
     let args = &parts[1..];
 
     // Handle builtins normally (they run in-process)
-    if matches!(cmd.as_str(), "cd" | "exit" | "pwd" | "type" | "echo") {
+    if matches!(
+        cmd.as_str(),
+        "cd" | "exit" | "pwd" | "type" | "echo" | "history"
+    ) {
         let output = Builtins.execute(cmd, args);
         handle_output(output, io_stream, stdout)?;
         return Ok(());
@@ -464,6 +361,7 @@ pub fn execute_pipeline_interruptible(input: &str, stdout: &mut impl Write) -> i
         return Ok(());
     }
 
+    append_to_file(Path::new(".history"), &input)?;
     if commands.len() == 1 {
         return execute_single_interruptible(input, stdout);
     }

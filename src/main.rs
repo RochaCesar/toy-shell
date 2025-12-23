@@ -32,6 +32,7 @@ enum Output {
 fn main() -> io::Result<()> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let mut shell = Shell::new();
+    let _ = std::fs::write(".history", "");
     loop {
         write!(stdout, "\r{}$ ", termion::clear::CurrentLine)?;
         io::stdout().flush()?;

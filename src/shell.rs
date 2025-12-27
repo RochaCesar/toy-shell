@@ -9,7 +9,11 @@ use termion::raw::IntoRawMode;
 pub struct Shell {
     pub input: String,
     pub cursor_pos: usize,
-    pub last_key_was_tab: bool, // ← Add this
+    pub last_key_was_tab: bool,
+    // History tracking
+    pub history: Vec<String>,
+    pub history_index: usize,
+    pub temp_input: Option<String>,
 }
 impl Shell {
     pub fn new() -> Self {
@@ -17,6 +21,40 @@ impl Shell {
             input: String::new(),
             cursor_pos: 0,
             last_key_was_tab: false,
+            history: vec![],
+            history_index: 0,
+            temp_input: None,
+        }
+    }
+
+    pub fn add_to_history(&mut self, cmd: String) {
+        if !cmd.is_empty() {
+            self.history.push(cmd);
+            self.history_index = self.history.len();
+        }
+    }
+    pub fn history_prev(&mut self) {
+        if self.history.is_empty() {
+            return;
+        }
+        if self.history_index == self.history.len() {
+            self.temp_input = Some(self.input.clone());
+        }
+        if self.history_index > 0 {
+            self.history_index -= 1;
+            self.input = self.history[self.history_index].clone();
+        }
+    }
+    pub fn history_next(&mut self) {
+        if self.history_index < self.history.len() {
+            self.history_index += 1;
+
+            if self.history_index == self.history.len() {
+                self.input = self.temp_input.take().unwrap_or_default();
+            } else {
+                self.input = self.history[self.history_index].clone();
+            }
+            self.cursor_pos = self.input.chars().count();
         }
     }
 

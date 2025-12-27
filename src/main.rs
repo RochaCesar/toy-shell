@@ -79,8 +79,10 @@ fn main() -> io::Result<()> {
                     write!(stdout, "\r\n")?;
                     io::stdout().flush()?;
 
-                    let input = shell.input.trim();
+                    let input = shell.input.trim().to_string();
+                    shell.add_to_history(input.clone());
 
+                    append_to_file(Path::new(".history"), &input)?;
                     // Check for exit first
                     if input.starts_with("exit") {
                         let code = input
@@ -135,6 +137,14 @@ fn main() -> io::Result<()> {
                         shell.input.remove(byte_pos);
                         shell.redraw_line(&mut stdout)?;
                     }
+                }
+                Key::Up => {
+                    shell.history_prev();
+                    shell.redraw_line(&mut stdout)?;
+                }
+                Key::Down => {
+                    shell.history_next();
+                    shell.redraw_line(&mut stdout)?;
                 }
                 Key::Ctrl('c') => {
                     shell.last_key_was_tab = false;

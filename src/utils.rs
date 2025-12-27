@@ -252,7 +252,6 @@ pub fn execute_single_interruptible(input: &str, stdout: &mut impl Write) -> io:
         return Ok(());
     }
 
-    append_to_file(Path::new(".history"), &input)?;
     let cmd = &parts[0];
     let args = &parts[1..];
 
@@ -361,7 +360,6 @@ pub fn execute_pipeline_interruptible(input: &str, stdout: &mut impl Write) -> i
         return Ok(());
     }
 
-    append_to_file(Path::new(".history"), &input)?;
     if commands.len() == 1 {
         return execute_single_interruptible(input, stdout);
     }

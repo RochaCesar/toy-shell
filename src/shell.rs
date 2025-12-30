@@ -30,6 +30,7 @@ impl Shell {
     }
     pub fn history_command(&mut self, args: &[String]) -> Result<String, ErrorKind> {
         // eprintln!("\r\nDEBUG: history_command called with args: {:?}\r", args);
+        //
 
         if args.is_empty() {
             // No args - print history
@@ -46,6 +47,19 @@ impl Shell {
             // eprintln!("\r\nDEBUG: filename = {:?}\r", filename);
             self.load_history_from_file(filename)?;
             Ok(String::new())
+        } else if let Ok(n) = args[0].parse::<usize>() {
+            // Show last n commands
+            let mut output = String::new();
+            let start = if n >= self.history.len() {
+                0
+            } else {
+                self.history.len() - n
+            };
+
+            for (i, cmd) in self.history.iter().enumerate().skip(start) {
+                output.push_str(&format!("{:5}  {}\n", i + 1, cmd));
+            }
+            Ok(output)
         } else {
             Err(ErrorKind::CompleteFailure(format!(
                 "history: invalid option: {}",

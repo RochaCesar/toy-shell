@@ -1,4 +1,5 @@
 use crate::builtins::*;
+use crate::shell::*;
 use std::fs::OpenOptions;
 use std::io::{self};
 use std::path::Path;
@@ -220,16 +221,24 @@ use std::sync::{
 use std::os::unix::process::CommandExt;
 
 // Wrapper to run commands with Ctrl+C support
-pub fn execute_with_interrupt_support(input: &str, stdout: &mut impl Write) -> io::Result<()> {
+pub fn execute_with_interrupt_support(
+    input: &str,
+    stdout: &mut impl Write,
+    shell: &mut Shell,
+) -> io::Result<()> {
     if input.contains('|') {
-        execute_pipeline_interruptible(input, stdout)
+        execute_pipeline_interruptible(input, stdout, shell)
     } else {
-        execute_single_interruptible(input, stdout)
+        execute_single_interruptible(input, stdout, shell)
     }
 }
 
 // Single command with Ctrl+C support
-pub fn execute_single_interruptible(input: &str, stdout: &mut impl Write) -> io::Result<()> {
+pub fn execute_single_interruptible(
+    input: &str,
+    stdout: &mut impl Write,
+    shell: &mut Shell,
+) -> io::Result<()> {
     let mut parts = tokenize(input);
 
     let io_stream = if let Some(redirect_index) = parts.iter().position(|x| x == "2>>") {
@@ -254,6 +263,30 @@ pub fn execute_single_interruptible(input: &str, stdout: &mut impl Write) -> io:
 
     let cmd = &parts[0];
     let args = &parts[1..];
+    // Handle history command specially (needs shell state)
+    if cmd == "history" {
+        // eprintln!("\r\nDEBUG: About to call history_command\r");
+        // eprintln!("\r\nDEBUG: cmd = {}, args = {:?}\r", cmd, args);
+        match shell.history_command(&args.to_vec()) {
+            Ok(output) => {
+                // eprintln!(
+                //     "\r\nDEBUG: history_command returned OK, output len = {}\r",
+                //     output.len()
+                // );
+                if !output.is_empty() {
+                    write!(stdout, "{}", output.replace('\n', "\r\n"))?;
+                }
+            }
+            Err(ErrorKind::CompleteFailure(err)) => {
+                eprintln!("\r\nDEBUG: history_command returned error: {}\r", err);
+                write!(stdout, "{}\r\n", err)?;
+            }
+            _ => {
+                eprintln!("\r\nDEBUG: history_command returned something else\r");
+            }
+        }
+        return Ok(());
+    }
 
     // Handle builtins normally (they run in-process)
     if matches!(
@@ -349,7 +382,11 @@ pub fn execute_single_interruptible(input: &str, stdout: &mut impl Write) -> io:
 }
 
 // Fix pipeline to let builtins ignore stdin and just output
-pub fn execute_pipeline_interruptible(input: &str, stdout: &mut impl Write) -> io::Result<()> {
+pub fn execute_pipeline_interruptible(
+    input: &str,
+    stdout: &mut impl Write,
+    shell: &mut Shell,
+) -> io::Result<()> {
     let commands: Vec<Vec<String>> = input
         .split('|')
         .map(|cmd| tokenize(cmd.trim()))
@@ -361,7 +398,7 @@ pub fn execute_pipeline_interruptible(input: &str, stdout: &mut impl Write) -> i
     }
 
     if commands.len() == 1 {
-        return execute_single_interruptible(input, stdout);
+        return execute_single_interruptible(input, stdout, shell);
     }
 
     let builtins = Builtins;

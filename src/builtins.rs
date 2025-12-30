@@ -19,7 +19,7 @@ impl Builtins {
             "cd" => self.cd(args.iter().next().map(|x| x.as_str()).unwrap_or("~")),
             "type" => self._type(args.iter().map(|x| x.as_str()).next()),
             "cat" => self.cat(args),
-            "history" => self.history(args.iter().next().map(|x| x.as_str())),
+            // "history" => self.history(args.iter().next().map(|x| x.as_str())),
             _ => Err(ErrorKind::CompleteFailure(format!(
                 "{}: command not found",
                 cmd
@@ -27,26 +27,26 @@ impl Builtins {
         }
     }
 
-    pub fn history(&self, args: Option<&str>) -> Result<String, ErrorKind> {
-        let n = match args {
-            Some(arg) => arg.parse::<usize>().map_err(|_| {
-                ErrorKind::CompleteFailure(format!("history: {}: numeric argument required", arg))
-            })?,
-            _ => 1000,
-        };
-        if let Ok(lines) = read_lines(".history") {
-            let mut deque = std::collections::VecDeque::with_capacity(n);
-            for (i, line) in lines.map_while(Result::ok).enumerate() {
-                deque.push_back(format!("{} {line}", i + 1));
-                if deque.len() > n {
-                    deque.pop_front();
-                }
-            }
-            let result: Vec<_> = deque.into_iter().collect();
-            return Ok(format!("{}\n", result.join("\n")));
-        }
-        Ok(String::new())
-    }
+    // pub fn history(&self, args: &[String]) -> Result<String, ErrorKind> {
+    //     let n = match args {
+    //         Some(arg) => arg.parse::<usize>().map_err(|_| {
+    //             ErrorKind::CompleteFailure(format!("history: {}: numeric argument required", arg))
+    //         })?,
+    //         _ => 1000,
+    //     };
+    //     if let Ok(lines) = read_lines(".history") {
+    //         let mut deque = std::collections::VecDeque::with_capacity(n);
+    //         for (i, line) in lines.map_while(Result::ok).enumerate() {
+    //             deque.push_back(format!("{} {line}", i + 1));
+    //             if deque.len() > n {
+    //                 deque.pop_front();
+    //             }
+    //         }
+    //         let result: Vec<_> = deque.into_iter().collect();
+    //         return Ok(format!("{}\n", result.join("\n")));
+    //     }
+    //     Ok(String::new())
+    // }
 
     pub fn echo(&self, args: &[String]) -> Result<String, ErrorKind> {
         Ok(format!("{}\n", args.join(" ")))

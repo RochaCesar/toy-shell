@@ -1,7 +1,9 @@
+use crate::utils::*;
 use std::env;
 use std::fs;
 use std::io::{self, stdin, stdout, Write};
 use std::path::Path;
+use std::path::PathBuf;
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
@@ -26,6 +28,85 @@ impl Shell {
             temp_input: None,
         }
     }
+    pub fn history_command(&mut self, args: &[String]) -> Result<String, ErrorKind> {
+        // eprintln!("\r\nDEBUG: history_command called with args: {:?}\r", args);
+
+        if args.is_empty() {
+            // No args - print history
+            // eprintln!("\r\nDEBUG: Printing {} history items\r", self.history.len());
+            let mut output = String::new();
+            for (i, cmd) in self.history.iter().enumerate() {
+                output.push_str(&format!("{:5}  {}\n", i + 1, cmd));
+            }
+            Ok(output)
+        } else if args[0] == "-r" {
+            // eprintln!("\r\nDEBUG: -r flag detected\r");
+            // Read history from file
+            let filename = args.get(1).map(|s| s.as_str());
+            // eprintln!("\r\nDEBUG: filename = {:?}\r", filename);
+            self.load_history_from_file(filename)?;
+            Ok(String::new())
+        } else {
+            Err(ErrorKind::CompleteFailure(format!(
+                "history: invalid option: {}",
+                args[0]
+            )))
+        }
+    }
+
+    fn load_history_from_file(&mut self, filename: Option<&str>) -> Result<(), ErrorKind> {
+        use std::fs;
+        use std::path::PathBuf;
+
+        let history_path = if let Some(name) = filename {
+            PathBuf::from(name)
+        } else {
+            self.get_history_file_path()
+        };
+
+        // eprintln!(
+        //     "\r\nDEBUG: Trying to read from: {}\r",
+        //     history_path.display()
+        // );
+        // eprintln!("\r\nDEBUG: File exists: {}\r", history_path.exists());
+
+        match fs::read_to_string(&history_path) {
+            Ok(contents) => {
+                // eprintln!("\r\nDEBUG: Read {} bytes\r", contents.len());
+                // eprintln!("\r\nDEBUG: Contents:\r\n{}\r", contents);
+
+                let before = self.history.len();
+
+                for line in contents.lines() {
+                    let line = line.trim();
+                    if !line.is_empty() {
+                        // eprintln!("\r\nDEBUG: Adding to history: {}\r", line);
+                        self.history.push(line.to_string());
+                    }
+                }
+
+                let after = self.history.len();
+                // eprintln!("\r\nDEBUG: Added {} items to history\r", after - before);
+
+                self.history_index = self.history.len();
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("\r\nDEBUG: Error reading file: {}\r", e);
+                Err(ErrorKind::CompleteFailure(format!(
+                    "history: {}: No such file or directory",
+                    history_path.display()
+                )))
+            }
+        }
+    }
+    fn get_history_file_path(&self) -> PathBuf {
+        if let Ok(home) = env::var("HOME") {
+            PathBuf::from(home).join(".shell_history")
+        } else {
+            PathBuf::from(".shell_history")
+        }
+    }
 
     pub fn add_to_history(&mut self, cmd: String) {
         if !cmd.is_empty() {
@@ -44,6 +125,17 @@ impl Shell {
             self.history_index -= 1;
             self.input = self.history[self.history_index].clone();
         }
+    }
+    // Optional: save history on exit
+    pub fn save_history_to_file(&self) -> Result<(), ErrorKind> {
+        use std::fs;
+
+        let history_path = self.get_history_file_path();
+        let contents = self.history.join("\n");
+
+        fs::write(&history_path, contents).map_err(|_| {
+            ErrorKind::CompleteFailure(format!("history: cannot write {}", history_path.display()))
+        })
     }
     pub fn history_next(&mut self) {
         if self.history_index < self.history.len() {

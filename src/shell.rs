@@ -47,6 +47,11 @@ impl Shell {
             // eprintln!("\r\nDEBUG: filename = {:?}\r", filename);
             self.load_history_from_file(filename)?;
             Ok(String::new())
+        } else if args[0] == "-w" {
+            // Write history to file
+            let filename = args.get(1).map(|s| s.as_str());
+            self.write_history_to_file(filename)?;
+            Ok(String::new())
         } else if let Ok(n) = args[0].parse::<usize>() {
             // Show last n commands
             let mut output = String::new();
@@ -68,6 +73,30 @@ impl Shell {
         }
     }
 
+    fn write_history_to_file(&self, filename: Option<&str>) -> Result<(), ErrorKind> {
+        let history_path = if let Some(name) = filename {
+            PathBuf::from(name)
+        } else {
+            self.get_history_file_path()
+        };
+        // Join all history commands with newlines
+        let contents = self.history.join("\n");
+
+        // Add trailing newline if there's content
+        let contents = if contents.is_empty() {
+            contents
+        } else {
+            format!("{}\n", contents)
+        };
+
+        match fs::write(&history_path, contents) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(ErrorKind::CompleteFailure(format!(
+                "history: {}: cannot write to file",
+                history_path.display()
+            ))),
+        }
+    }
     fn load_history_from_file(&mut self, filename: Option<&str>) -> Result<(), ErrorKind> {
         use std::fs;
         use std::path::PathBuf;

@@ -20,7 +20,7 @@ pub struct Shell {
 }
 impl Shell {
     pub fn new() -> Self {
-        Shell {
+        let mut shell = Shell {
             input: String::new(),
             cursor_pos: 0,
             last_key_was_tab: false,
@@ -28,6 +28,26 @@ impl Shell {
             history_index: 0,
             temp_input: None,
             last_written_index: 0,
+        };
+        shell.load_history_on_startup();
+        shell
+    }
+    fn load_history_on_startup(&mut self) {
+        // Check if HISTFILE is set
+        if let Ok(histfile) = env::var("HISTFILE") {
+            // Try to load from HISTFILE
+            let _ = self.load_history_from_file(Some(&histfile));
+        } else {
+            // Fall back to default ~/.shell_history
+            let _ = self.load_history_from_file(None);
+        }
+    }
+    pub fn save_history_on_exit(&mut self) -> Result<(), ErrorKind> {
+        // Save to HISTFILE if set, otherwise to default
+        if let Ok(histfile) = env::var("HISTFILE") {
+            self.write_history_to_file(Some(&histfile))
+        } else {
+            self.write_history_to_file(None)
         }
     }
     pub fn history_command(&mut self, args: &[String]) -> Result<String, ErrorKind> {

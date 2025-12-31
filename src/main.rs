@@ -82,9 +82,11 @@ fn main() -> io::Result<()> {
                     let input = shell.input.trim().to_string();
                     shell.add_to_history(input.clone());
 
-                    append_to_file(Path::new(".history"), &input)?;
                     // Check for exit first
                     if input.starts_with("exit") {
+                        // Save history on exit
+                        let _ = shell.save_history_on_exit();
+
                         let code = input
                             .split_whitespace()
                             .nth(1)

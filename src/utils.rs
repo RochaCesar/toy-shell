@@ -4,11 +4,14 @@ use std::fs::OpenOptions;
 use std::io::{self};
 use std::path::Path;
 use std::thread;
+
+#[derive(Debug)]
 pub struct PartialSuccess {
     pub success_data: String,
     pub error_info: String,
 }
 
+#[derive(Debug)]
 pub enum ErrorKind {
     PartialSuccess(PartialSuccess),
     CompleteFailure(String),

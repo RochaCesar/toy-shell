@@ -52,6 +52,10 @@ impl Shell {
             let filename = args.get(1).map(|s| s.as_str());
             self.write_history_to_file(filename)?;
             Ok(String::new())
+        } else if args[0] == "-a" {
+            let filename = args.get(1).map(|s| s.as_str());
+            self.append_history_to_file(filename)?;
+            Ok(String::new())
         } else if let Ok(n) = args[0].parse::<usize>() {
             // Show last n commands
             let mut output = String::new();
@@ -96,6 +100,27 @@ impl Shell {
                 history_path.display()
             ))),
         }
+    }
+    fn append_history_to_file(&self, filename: Option<&str>) -> Result<(), ErrorKind> {
+        use std::path::PathBuf;
+
+        let history_path = if let Some(name) = filename {
+            PathBuf::from(name)
+        } else {
+            self.get_history_file_path()
+        };
+
+        // Append each history command to the file
+        for cmd in &self.history {
+            if let Err(_) = append_to_file(&history_path, cmd) {
+                return Err(ErrorKind::CompleteFailure(format!(
+                    "history: {}: cannot append to file",
+                    history_path.display()
+                )));
+            }
+        }
+
+        Ok(())
     }
     fn load_history_from_file(&mut self, filename: Option<&str>) -> Result<(), ErrorKind> {
         use std::fs;

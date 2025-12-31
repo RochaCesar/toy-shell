@@ -16,6 +16,7 @@ pub struct Shell {
     pub history: Vec<String>,
     pub history_index: usize,
     pub temp_input: Option<String>,
+    last_written_index: usize, // ← Add this: tracks what's been written to file
 }
 impl Shell {
     pub fn new() -> Self {
@@ -26,6 +27,7 @@ impl Shell {
             history: vec![],
             history_index: 0,
             temp_input: None,
+            last_written_index: 0,
         }
     }
     pub fn history_command(&mut self, args: &[String]) -> Result<String, ErrorKind> {
@@ -77,31 +79,7 @@ impl Shell {
         }
     }
 
-    fn write_history_to_file(&self, filename: Option<&str>) -> Result<(), ErrorKind> {
-        let history_path = if let Some(name) = filename {
-            PathBuf::from(name)
-        } else {
-            self.get_history_file_path()
-        };
-        // Join all history commands with newlines
-        let contents = self.history.join("\n");
-
-        // Add trailing newline if there's content
-        let contents = if contents.is_empty() {
-            contents
-        } else {
-            format!("{}\n", contents)
-        };
-
-        match fs::write(&history_path, contents) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(ErrorKind::CompleteFailure(format!(
-                "history: {}: cannot write to file",
-                history_path.display()
-            ))),
-        }
-    }
-    fn append_history_to_file(&self, filename: Option<&str>) -> Result<(), ErrorKind> {
+    fn append_history_to_file(&mut self, filename: Option<&str>) -> Result<(), ErrorKind> {
         use std::path::PathBuf;
 
         let history_path = if let Some(name) = filename {
@@ -110,8 +88,8 @@ impl Shell {
             self.get_history_file_path()
         };
 
-        // Append each history command to the file
-        for cmd in &self.history {
+        // Only append commands since last_written_index
+        for cmd in &self.history[self.last_written_index..] {
             if let Err(_) = append_to_file(&history_path, cmd) {
                 return Err(ErrorKind::CompleteFailure(format!(
                     "history: {}: cannot append to file",
@@ -120,8 +98,42 @@ impl Shell {
             }
         }
 
+        // Update the index to reflect what's been written
+        self.last_written_index = self.history.len();
+
         Ok(())
     }
+
+    fn write_history_to_file(&mut self, filename: Option<&str>) -> Result<(), ErrorKind> {
+        use std::fs;
+        use std::path::PathBuf;
+
+        let history_path = if let Some(name) = filename {
+            PathBuf::from(name)
+        } else {
+            self.get_history_file_path()
+        };
+
+        let contents = self.history.join("\n");
+        let contents = if contents.is_empty() {
+            contents
+        } else {
+            format!("{}\n", contents)
+        };
+
+        match fs::write(&history_path, contents) {
+            Ok(_) => {
+                // Update last_written_index after full write
+                self.last_written_index = self.history.len();
+                Ok(())
+            }
+            Err(_) => Err(ErrorKind::CompleteFailure(format!(
+                "history: {}: cannot write to file",
+                history_path.display()
+            ))),
+        }
+    }
+
     fn load_history_from_file(&mut self, filename: Option<&str>) -> Result<(), ErrorKind> {
         use std::fs;
         use std::path::PathBuf;

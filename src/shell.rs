@@ -192,7 +192,7 @@ impl Shell {
                 Ok(())
             }
             Err(e) => {
-                eprintln!("\r\nDEBUG: Error reading file: {}\r", e);
+                // eprintln!("\r\nDEBUG: Error reading file: {}\r", e);
                 Err(ErrorKind::CompleteFailure(format!(
                     "history: {}: No such file or directory",
                     history_path.display()
